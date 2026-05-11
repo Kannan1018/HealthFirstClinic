@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel — HealthFirst Clinic</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav id="mainNav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">🏥</span>
+      <span class="logo-text">HealthFirst</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="admin.html" style="color:var(--teal)">Admin Panel</a></li>
+      <li><a href="doctor.html">Doctor Dashboard</a></li>
+      <li><a href="index.html">Public Site</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="book.html" class="btn-primary nav-book">View Booking Page</a>
+      <button class="burger" id="burger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="admin.html">Admin Panel</a>
+    <a href="doctor.html">Doctor Dashboard</a>
+    <a href="index.html">Public Site</a>
+  </div>
+</nav>
+
+<div class="admin-body">
+  <div class="admin-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div class="admin-title">Admin Dashboard</div>
+        <div class="admin-sub">HealthFirst Clinic · Indore · <span id="adminDate"></span></div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn-ghost" onclick="window.print()">🖨 Export Report</button>
+        <a href="book.html" class="btn-primary">View Booking Page</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- BIG KPIs -->
+  <div class="big-kpi-row">
+    <div class="big-kpi accent">
+      <div class="bk-val" id="adminRevenue">Loading...</div>
+      <div class="bk-label">Revenue this month</div>
+      <div class="bk-delta">↑ 28% vs last month</div>
+    </div>
+    <div class="big-kpi">
+      <div class="bk-val" id="adminTotalBookings">...</div>
+      <div class="bk-label">Appointments this month</div>
+      <div class="bk-delta up">↑ 19% growth</div>
+    </div>
+    <div class="big-kpi">
+      <div class="bk-val">94%</div>
+      <div class="bk-label">Appointment fill rate</div>
+      <div class="bk-delta up">↑ 4% vs last month</div>
+    </div>
+    <div class="big-kpi">
+      <div class="bk-val">4.8 ★</div>
+      <div class="bk-label">Average clinic rating</div>
+      <div class="bk-delta dn">↓ 0.1 this month</div>
+    </div>
+  </div>
+
+  <div class="admin-grid">
+    <!-- LEFT COLUMN -->
+    <div style="display:flex;flex-direction:column;gap:20px">
+
+      <!-- Doctor performance table -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">Doctor Performance — May 2026</div>
+          <span class="adm-badge" style="background:var(--teal-l);color:var(--teal);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px">12 doctors</span>
+        </div>
+        <div id="doctorPerformanceTable">
+          <div class="doc-table-row">
+            <div class="dtr-rank">#1</div>
+            <div class="dtr-ava">👩‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Priya Sharma</div><div class="dtr-spec">General Physician</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">284</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.9★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹1.13L</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill sp-active">Active</span>
+            </div>
+          </div>
+          <div class="doc-table-row">
+            <div class="dtr-rank">#2</div>
+            <div class="dtr-ava">👩‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Meena Agarwal</div><div class="dtr-spec">Gynecologist</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">308</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.9★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹1.38L</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill sp-active">Active</span>
+            </div>
+          </div>
+          <div class="doc-table-row">
+            <div class="dtr-rank">#3</div>
+            <div class="dtr-ava">👩‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Suman Verma</div><div class="dtr-spec">Cardiologist</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">142</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.8★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹1.42L</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill sp-active">Active</span>
+            </div>
+          </div>
+          <div class="doc-table-row">
+            <div class="dtr-rank">#4</div>
+            <div class="dtr-ava">👨‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Rahul Mehta</div><div class="dtr-spec">General Physician</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">196</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.7★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹98K</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill sp-active">Active</span>
+            </div>
+          </div>
+          <div class="doc-table-row">
+            <div class="dtr-rank">#5</div>
+            <div class="dtr-ava">👨‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Ramesh Singh</div><div class="dtr-spec">Orthopedic Surgeon</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">176</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.7★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹1.05L</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill sp-active">Active</span>
+            </div>
+          </div>
+          <div class="doc-table-row">
+            <div class="dtr-rank">#6</div>
+            <div class="dtr-ava">👩‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Neha Joshi</div><div class="dtr-spec">Dermatologist</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">211</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.8★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹89K</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill sp-active">Active</span>
+            </div>
+          </div>
+          <div class="doc-table-row">
+            <div class="dtr-rank">#7</div>
+            <div class="dtr-ava">👨‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Arjun Patel</div><div class="dtr-spec">Pediatrician</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">98</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.6★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹71K</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill" style="background:var(--amber-l);color:#92400E">On Leave</span>
+            </div>
+          </div>
+          <div class="doc-table-row">
+            <div class="dtr-rank">#8</div>
+            <div class="dtr-ava">👨‍⚕️</div>
+            <div class="dtr-info"><div class="dtr-name">Dr. Sunil Thakur</div><div class="dtr-spec">ENT Specialist</div></div>
+            <div class="dtr-stats">
+              <div class="dtr-stat"><div class="dts-val">134</div><div class="dts-label">Patients</div></div>
+              <div class="dtr-stat"><div class="dts-val">4.6★</div><div class="dts-label">Rating</div></div>
+              <div class="dtr-stat"><div class="dts-val">₹65K</div><div class="dts-label">Revenue</div></div>
+              <span class="status-pill sp-active">Active</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent bookings -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">Recent Bookings</div>
+          <span style="font-size:12px;color:var(--navy-m)">Live feed</span>
+        </div>
+        <div id="recentBookingsTable"><div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading bookings from database...</div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div style="display:flex;flex-direction:column;gap:20px">
+
+      <!-- Revenue by specialty -->
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Revenue by Specialty</div></div>
+        <div class="rev-bars">
+          <div class="rb-row"><span class="rb-label">General</span><div class="rb-track"><div class="rb-fill" style="width:82%"></div></div><span class="rb-val">₹1.1L</span></div>
+          <div class="rb-row"><span class="rb-label">Cardiology</span><div class="rb-track"><div class="rb-fill" style="width:100%"></div></div><span class="rb-val">₹1.42L</span></div>
+          <div class="rb-row"><span class="rb-label">Gynecology</span><div class="rb-track"><div class="rb-fill" style="width:97%"></div></div><span class="rb-val">₹1.38L</span></div>
+          <div class="rb-row"><span class="rb-label">Ortho</span><div class="rb-track"><div class="rb-fill" style="width:74%"></div></div><span class="rb-val">₹1.05L</span></div>
+          <div class="rb-row"><span class="rb-label">Dermatology</span><div class="rb-track"><div class="rb-fill" style="width:63%"></div></div><span class="rb-val">₹89K</span></div>
+          <div class="rb-row"><span class="rb-label">Pediatrics</span><div class="rb-track"><div class="rb-fill" style="width:50%"></div></div><span class="rb-val">₹71K</span></div>
+          <div class="rb-row"><span class="rb-label">ENT</span><div class="rb-track"><div class="rb-fill" style="width:46%"></div></div><span class="rb-val">₹65K</span></div>
+        </div>
+      </div>
+
+      <!-- Daily stats -->
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Today's Clinic Stats</div></div>
+        <div style="padding:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Total appointments today</span><span style="font-size:15px;font-weight:700;color:var(--navy)">68</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Completed</span><span style="font-size:15px;font-weight:700;color:var(--green)">41</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">In progress</span><span style="font-size:15px;font-weight:700;color:var(--amber)">12</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Upcoming</span><span style="font-size:15px;font-weight:700;color:var(--blue)">15</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Cancelled / No-show</span><span style="font-size:15px;font-weight:700;color:var(--red)">8</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px"><span style="font-size:13px;color:var(--navy-m)">Today's revenue (so far)</span><span style="font-size:15px;font-weight:700;color:var(--teal)">₹24,800</span></div>
+        </div>
+      </div>
+
+      <!-- Quick actions -->
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">Quick Actions</div></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:8px">
+          <button class="btn-primary" style="width:100%;text-align:center;justify-content:center" onclick="alert('Add Doctor form would open here')">+ Add New Doctor</button>
+          <button class="btn-ghost" style="width:100%;text-align:center;justify-content:center" onclick="alert('Clinic schedule settings would open here')">📅 Manage Clinic Schedule</button>
+          <button class="btn-ghost" style="width:100%;text-align:center;justify-content:center" onclick="alert('SMS broadcast tool would open here')">📱 Send SMS Broadcast</button>
+          <button class="btn-ghost" style="width:100%;text-align:center;justify-content:center" onclick="window.print()">📊 Download Monthly Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  const d = new Date();
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const el = document.getElementById('adminDate');
+  if(el) el.textContent = d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+</script>
+</body>
+</html>

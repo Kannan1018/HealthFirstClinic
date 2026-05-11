@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doctor Dashboard — HealthFirst Clinic</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav id="mainNav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">🏥</span>
+      <span class="logo-text">HealthFirst</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="doctor.html" style="color:var(--teal)">My Dashboard</a></li>
+      <li><a href="admin.html">Admin Panel</a></li>
+      <li><a href="index.html">Public Site</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="book.html" class="btn-primary nav-book">View Booking Page</a>
+      <button class="burger" id="burger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="doctor.html">My Dashboard</a>
+    <a href="admin.html">Admin Panel</a>
+    <a href="index.html">Public Site</a>
+  </div>
+</nav>
+
+<div class="dashboard-layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-doc">
+      <div class="sb-avatar">👩‍⚕️</div>
+      <div class="sb-name">Dr. Priya Sharma</div>
+      <div class="sb-spec">General Physician</div>
+      <div class="sb-avail">
+        <span class="sb-avail-label" id="availLabel">Available</span>
+        <button class="sb-toggle" id="sbToggle" onclick="toggleAvail()">
+          <div class="sb-thumb"></div>
+        </button>
+      </div>
+    </div>
+    <nav class="sb-nav">
+      <button class="sb-link active" onclick="showSection('today',this)"><span class="sb-link-icon">📋</span> Today's Queue</button>
+      <button class="sb-link" onclick="showSection('prescription',this)"><span class="sb-link-icon">💊</span> Write Prescription</button>
+      <button class="sb-link" onclick="showSection('schedule',this)"><span class="sb-link-icon">📅</span> My Schedule</button>
+      <button class="sb-link" onclick="showSection('patients',this)"><span class="sb-link-icon">👥</span> Patient Records</button>
+      <button class="sb-link" onclick="showSection('earnings',this)"><span class="sb-link-icon">💰</span> Earnings</button>
+      <a href="index.html" class="sb-link" style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px"><span class="sb-link-icon">🏥</span> Public Site</a>
+      <a href="admin.html" class="sb-link"><span class="sb-link-icon">📊</span> Admin Panel</a>
+    </nav>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="dash-main">
+    <div class="dash-top">
+      <div>
+        <div class="dash-greeting">Good morning, Dr. Sharma 👋</div>
+        <div class="dash-date" id="dashDate"></div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn-ghost" onclick="window.print()">🖨 Print Queue</button>
+        <a href="book.html" class="btn-primary">View Booking Page</a>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Today's Appointments</div>
+        <div class="kpi-val" id="kpiToday">14</div>
+        <div class="kpi-delta up" id="kpiTodayDelta">↑ 3 more than yesterday</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Today's Revenue</div>
+        <div class="kpi-val">₹8,400</div>
+        <div class="kpi-delta up">↑ ₹1,200 vs daily avg</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Patient Rating</div>
+        <div class="kpi-val">4.9 ★</div>
+        <div class="kpi-delta up">↑ 0.1 this month</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Show Rate</div>
+        <div class="kpi-val">96%</div>
+        <div class="kpi-delta dn">↓ 2% vs last week</div>
+      </div>
+    </div>
+
+    <!-- TODAY'S QUEUE SECTION -->
+    <div id="section-today">
+      <div class="dash-grid">
+        <div>
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title">Today's Appointment Queue</div>
+              <div class="tab-bar">
+                <button class="tab-btn on" onclick="switchQueueTab(this,'upcoming')">Upcoming</button>
+                <button class="tab-btn" onclick="switchQueueTab(this,'done')">Completed</button>
+                <button class="tab-btn" onclick="switchQueueTab(this,'all')">All</button>
+              </div>
+            </div>
+
+            <div id="queue-upcoming">
+              <div class="appt-item" id="appt-1">
+                <div class="ai-token">1</div>
+                <div class="ai-info">
+                  <div class="ai-name">Anita Gupta · Female, 34</div>
+                  <div class="ai-detail">11:00 AM · Fever & headache · Token #001</div>
+                </div>
+                <div class="ai-actions">
+                  <button class="ai-btn done" onclick="markDone('appt-1')">✓ Done</button>
+                  <button class="ai-btn cancel" onclick="cancelAppt('appt-1')">✗ Cancel</button>
+                </div>
+              </div>
+              <div class="appt-item" id="appt-2">
+                <div class="ai-token">2</div>
+                <div class="ai-info">
+                  <div class="ai-name">Vikash Sharma · Male, 52</div>
+                  <div class="ai-detail">11:30 AM · Blood pressure checkup · Token #002</div>
+                </div>
+                <div class="ai-actions">
+                  <button class="ai-btn done" onclick="markDone('appt-2')">✓ Done</button>
+                  <button class="ai-btn cancel" onclick="cancelAppt('appt-2')">✗ Cancel</button>
+                </div>
+              </div>
+              <div class="appt-item" id="appt-3">
+                <div class="ai-token">3</div>
+                <div class="ai-info">
+                  <div class="ai-name">Priya Joshi · Female, 28</div>
+                  <div class="ai-detail">12:00 PM · Skin allergy · Token #003</div>
+                </div>
+                <div class="ai-actions">
+                  <button class="ai-btn done" onclick="markDone('appt-3')">✓ Done</button>
+                  <button class="ai-btn cancel" onclick="cancelAppt('appt-3')">✗ Cancel</button>
+                </div>
+              </div>
+              <div class="appt-item" id="appt-4">
+                <div class="ai-token">4</div>
+                <div class="ai-info">
+                  <div class="ai-name">Ramesh Patel · Male, 61</div>
+                  <div class="ai-detail">2:00 PM · Diabetes follow-up · Token #004</div>
+                </div>
+                <div class="ai-actions">
+                  <button class="ai-btn done" onclick="markDone('appt-4')">✓ Done</button>
+                  <button class="ai-btn cancel" onclick="cancelAppt('appt-4')">✗ Cancel</button>
+                </div>
+              </div>
+              <div class="appt-item" id="appt-5">
+                <div class="ai-token">5</div>
+                <div class="ai-info">
+                  <div class="ai-name">Sunita Yadav · Female, 45</div>
+                  <div class="ai-detail">2:30 PM · Thyroid checkup · Token #005</div>
+                </div>
+                <div class="ai-actions">
+                  <button class="ai-btn done" onclick="markDone('appt-5')">✓ Done</button>
+                  <button class="ai-btn cancel" onclick="cancelAppt('appt-5')">✗ Cancel</button>
+                </div>
+              </div>
+              <div class="appt-item" id="appt-6">
+                <div class="ai-token">6</div>
+                <div class="ai-info">
+                  <div class="ai-name">Mohan Gupta · Male, 38</div>
+                  <div class="ai-detail">3:00 PM · General checkup · Token #006</div>
+                </div>
+                <div class="ai-actions">
+                  <button class="ai-btn done" onclick="markDone('appt-6')">✓ Done</button>
+                  <button class="ai-btn cancel" onclick="cancelAppt('appt-6')">✗ Cancel</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="queue-done" style="display:none">
+              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Suresh Agarwal · Male, 45</div><div class="ai-detail">9:00 AM · Cold & cough · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
+              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Meena Devi · Female, 38</div><div class="ai-detail">9:30 AM · General checkup · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
+              <div class="appt-item"><div class="ai-token" style="background:var(--red-l);color:var(--red)">✗</div><div class="ai-info"><div class="ai-name">Arjun Meena · Male, 22</div><div class="ai-detail">10:00 AM · No-show</div></div><span class="status-badge sb-cancelled">No-Show</span></div>
+              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Kavita Sharma · Female, 55</div><div class="ai-detail">10:30 AM · Hypertension · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
+              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Rohan Verma · Male, 27</div><div class="ai-detail">11:00 AM · Migraine · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
+              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Sita Bai · Female, 48</div><div class="ai-detail">11:30 AM · Back pain · Referred to Ortho</div></div><span class="status-badge sb-done">Done</span></div>
+              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Dinesh Kumar · Male, 33</div><div class="ai-detail">12:00 PM · Acidity · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
+              <div class="appt-item"><div class="ai-token" style="background:var(--red-l);color:var(--red)">✗</div><div class="ai-info"><div class="ai-name">Pooja Rawat · Female, 29</div><div class="ai-detail">12:30 PM · Cancelled by patient</div></div><span class="status-badge sb-cancelled">Cancelled</span></div>
+            </div>
+
+            <div id="queue-all" style="display:none">
+              <div style="padding:16px 20px;font-size:13px;color:var(--navy-m)">Showing all 14 appointments for today.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar stats -->
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Queue Status</div></div>
+            <div style="padding:16px 20px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <span style="font-size:13px;color:var(--navy-m)">Waiting</span>
+                <span style="font-size:16px;font-weight:700;color:var(--amber)" id="waitingCount">6</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <span style="font-size:13px;color:var(--navy-m)">Completed</span>
+                <span style="font-size:16px;font-weight:700;color:var(--green)">8</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <span style="font-size:13px;color:var(--navy-m)">Cancelled / No-show</span>
+                <span style="font-size:16px;font-weight:700;color:var(--red)">2</span>
+              </div>
+              <div style="background:var(--bg);border-radius:var(--r);height:8px;overflow:hidden;margin-bottom:6px">
+                <div style="height:8px;background:var(--teal);border-radius:var(--r);width:57%"></div>
+              </div>
+              <div style="font-size:12px;color:var(--navy-m)">8 of 14 completed (57%)</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Today's Schedule</div></div>
+            <div style="padding:0 4px">
+              <div style="padding:10px 16px;font-size:12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)"><span style="color:var(--navy-m)">Morning slot</span><span style="font-weight:600;color:var(--navy)">9 AM – 1 PM</span></div>
+              <div style="padding:10px 16px;font-size:12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)"><span style="color:var(--navy-m)">Afternoon slot</span><span style="font-weight:600;color:var(--navy)">2 PM – 6 PM</span></div>
+              <div style="padding:10px 16px;font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--navy-m)">Avg. per patient</span><span style="font-weight:600;color:var(--navy)">~12 minutes</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRESCRIPTION SECTION -->
+    <div id="section-prescription" style="display:none">
+      <div style="max-width:680px">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">💊 Write Digital Prescription</div>
+          </div>
+          <div class="rx-writer">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+              <div class="rx-field">
+                <label class="rx-label">Patient Name</label>
+                <input class="rx-input" type="text" id="rxPat" placeholder="Anita Gupta">
+              </div>
+              <div class="rx-field">
+                <label class="rx-label">Token / Appointment</label>
+                <input class="rx-input" type="text" id="rxToken" placeholder="Token #001">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
+              <div class="rx-field">
+                <label class="rx-label">Age</label>
+                <input class="rx-input" type="number" id="rxAge" placeholder="34">
+              </div>
+              <div class="rx-field">
+                <label class="rx-label">Gender</label>
+                <select class="rx-select" id="rxGender">
+                  <option>Female</option><option>Male</option><option>Other</option>
+                </select>
+              </div>
+              <div class="rx-field">
+                <label class="rx-label">Date</label>
+                <input class="rx-input" type="date" id="rxDate">
+              </div>
+            </div>
+
+            <div class="rx-field">
+              <label class="rx-label">Diagnosis</label>
+              <input class="rx-input" id="rxDiag" placeholder="e.g. Viral Fever, Hypertension">
+            </div>
+
+            <div class="rx-field" style="margin-top:14px">
+              <label class="rx-label">Medicines</label>
+              <div id="rxMedRows">
+                <div class="rx-med-row">
+                  <input class="rx-input" type="text" placeholder="Medicine name (e.g. Paracetamol 500mg)">
+                  <input class="rx-input" type="text" placeholder="Dose">
+                  <input class="rx-input" type="text" placeholder="Frequency (e.g. TDS)">
+                  <button class="rx-remove" onclick="this.closest('.rx-med-row').remove()">×</button>
+                </div>
+                <div class="rx-med-row">
+                  <input class="rx-input" type="text" placeholder="Medicine name">
+                  <input class="rx-input" type="text" placeholder="Dose">
+                  <input class="rx-input" type="text" placeholder="Frequency">
+                  <button class="rx-remove" onclick="this.closest('.rx-med-row').remove()">×</button>
+                </div>
+              </div>
+              <button class="rx-add-med" onclick="addMedRow()">+ Add another medicine</button>
+            </div>
+
+            <div class="rx-field">
+              <label class="rx-label">Doctor's Advice / Notes</label>
+              <textarea class="rx-textarea" id="rxNotes" placeholder="Rest for 3 days. Drink plenty of fluids. Avoid spicy food. Follow up if fever persists beyond 3 days..." style="min-height:90px"></textarea>
+            </div>
+
+            <div class="rx-field">
+              <label class="rx-label">Follow-up in</label>
+              <select class="rx-select" id="rxFollowup">
+                <option>No follow-up needed</option>
+                <option>3 days</option>
+                <option>1 week</option>
+                <option>2 weeks</option>
+                <option>1 month</option>
+                <option>3 months</option>
+              </select>
+            </div>
+
+            <div style="display:flex;gap:12px;margin-top:6px">
+              <button class="rx-save" onclick="savePrescription()" style="flex:1">💾 Save Prescription</button>
+              <button class="rx-save" onclick="printPrescription()" style="flex:1;background:var(--navy)">🖨 Print / Share</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE SECTION -->
+    <div id="section-schedule" style="display:none">
+      <div class="panel" style="max-width:680px">
+        <div class="panel-head"><div class="panel-title">📅 My Weekly Schedule</div><button class="btn-primary" style="font-size:13px;padding:7px 16px">Edit Schedule</button></div>
+        <div style="padding:20px">
+          <table style="width:100%;border-collapse:collapse;font-size:14px">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border)">
+                <th style="text-align:left;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Day</th>
+                <th style="text-align:left;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Morning</th>
+                <th style="text-align:left;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Afternoon</th>
+                <th style="text-align:center;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Max Patients</th>
+                <th style="text-align:center;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Status</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleTable">
+              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Monday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
+              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Tuesday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
+              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Wednesday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;text-align:center;font-weight:600">10</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
+              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Thursday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
+              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Friday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
+              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Saturday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 2:00 PM</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;text-align:center;font-weight:600">14</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
+              <tr><td style="padding:12px;font-weight:600;color:var(--navy)">Sunday</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;text-align:center;font-weight:600">—</td><td style="padding:12px;text-align:center"><span class="status-pill" style="background:var(--red-l);color:#991B1B">Off</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PATIENTS SECTION -->
+    <div id="section-patients" style="display:none">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">👥 Patient Records</div>
+          <input class="form-input" type="text" placeholder="Search patients..." style="width:220px;margin:0;padding:7px 12px;font-size:13px" oninput="searchPatients(this.value)">
+        </div>
+        <div id="patientList">
+          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">AG</div><div class="ai-info"><div class="ai-name">Anita Gupta · Female, 34</div><div class="ai-detail">Last visit: Today · Fever & headache · 📞 9876543210</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
+          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">VS</div><div class="ai-info"><div class="ai-name">Vikash Sharma · Male, 52</div><div class="ai-detail">Last visit: Today · BP checkup · 📞 9765432109</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
+          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">PJ</div><div class="ai-info"><div class="ai-name">Priya Joshi · Female, 28</div><div class="ai-detail">Last visit: 3 days ago · Skin allergy · 📞 9654321098</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
+          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">RP</div><div class="ai-info"><div class="ai-name">Ramesh Patel · Male, 61</div><div class="ai-detail">Last visit: 1 week ago · Diabetes follow-up · 📞 9543210987</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
+          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">SA</div><div class="ai-info"><div class="ai-name">Suresh Agarwal · Male, 45</div><div class="ai-detail">Last visit: Today · Cold & cough · 📞 9432109876</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EARNINGS SECTION -->
+    <div id="section-earnings" style="display:none">
+      <div class="kpi-grid" style="margin-bottom:20px">
+        <div class="kpi-card"><div class="kpi-label">This Month</div><div class="kpi-val">₹1,13,600</div><div class="kpi-delta up">↑ 18% vs last month</div></div>
+        <div class="kpi-card"><div class="kpi-label">This Week</div><div class="kpi-val">₹28,400</div><div class="kpi-delta up">↑ 12% vs last week</div></div>
+        <div class="kpi-card"><div class="kpi-label">Today</div><div class="kpi-val">₹8,400</div><div class="kpi-delta up">↑ ₹1,200 vs avg</div></div>
+        <div class="kpi-card"><div class="kpi-label">Avg per Patient</div><div class="kpi-val">₹421</div><div class="kpi-delta up">↑ ₹21 this month</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">💰 Monthly Earnings — May 2026</div></div>
+        <div class="rev-bars" style="padding:20px">
+          <div class="rb-row"><span class="rb-label">Week 1</span><div class="rb-track"><div class="rb-fill" style="width:72%"></div></div><span class="rb-val">₹26,400</span></div>
+          <div class="rb-row"><span class="rb-label">Week 2</span><div class="rb-track"><div class="rb-fill" style="width:85%"></div></div><span class="rb-val">₹31,200</span></div>
+          <div class="rb-row"><span class="rb-label">Week 3</span><div class="rb-track"><div class="rb-fill" style="width:65%"></div></div><span class="rb-val">₹23,800</span></div>
+          <div class="rb-row"><span class="rb-label">This week</span><div class="rb-track"><div class="rb-fill" style="width:77%"></div></div><span class="rb-val">₹28,400</span></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  // Set today's date
+  const d = new Date();
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('dashDate').textContent = days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+
+  // Set prescription date
+  const dateEl = document.getElementById('rxDate');
+  if(dateEl) dateEl.value = d.toISOString().split('T')[0];
+
+  // Section switching
+  function showSection(id, btn) {
+    ['today','prescription','schedule','patients','earnings'].forEach(s => {
+      document.getElementById('section-'+s).style.display = 'none';
+    });
+    document.getElementById('section-'+id).style.display = 'block';
+    document.querySelectorAll('.sb-link').forEach(l => l.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  // Availability toggle
+  function toggleAvail() {
+    const t = document.getElementById('sbToggle');
+    const l = document.getElementById('availLabel');
+    t.classList.toggle('off');
+    l.textContent = t.classList.contains('off') ? 'Offline' : 'Available';
+  }
+
+  // Queue tab
+  function switchQueueTab(btn, tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    ['upcoming','done','all'].forEach(t => {
+      const el = document.getElementById('queue-'+t);
+      if(el) el.style.display = t === tab ? 'block' : 'none';
+    });
+  }
+
+  // Mark done
+  let waitCount = 6;
+  function markDone(id) {
+    const row = document.getElementById(id);
+    row.querySelector('.ai-actions').innerHTML = '<span class="status-badge sb-done">✓ Done</span>';
+    row.querySelector('.ai-token').style.background = 'var(--green-l)';
+    row.querySelector('.ai-token').style.color = 'var(--green)';
+    waitCount = Math.max(0, waitCount - 1);
+    document.getElementById('waitingCount').textContent = waitCount;
+  }
+
+  function cancelAppt(id) {
+    const row = document.getElementById(id);
+    row.style.opacity = '0.5';
+    row.querySelector('.ai-actions').innerHTML = '<span class="status-badge sb-cancelled">Cancelled</span>';
+    waitCount = Math.max(0, waitCount - 1);
+    document.getElementById('waitingCount').textContent = waitCount;
+  }
+
+  // Prescription
+  function addMedRow() {
+    const div = document.createElement('div');
+    div.className = 'rx-med-row';
+    div.innerHTML = '<input class="rx-input" type="text" placeholder="Medicine name"><input class="rx-input" type="text" placeholder="Dose"><input class="rx-input" type="text" placeholder="Frequency"><button class="rx-remove" onclick="this.closest(\'.rx-med-row\').remove()">×</button>';
+    document.getElementById('rxMedRows').appendChild(div);
+  }
+
+  function savePrescription() {
+    const pat = document.getElementById('rxPat').value.trim();
+    if (!pat) { alert('Please enter patient name.'); return; }
+    alert('✅ Prescription saved for ' + pat + '!\n\nIn production, this would be stored in the patient record and sent via WhatsApp/SMS.');
+  }
+
+  function printPrescription() {
+    alert('🖨 Print functionality will open a formatted prescription PDF.\n\nIn production, this generates a clinic-branded PDF prescription.');
+  }
+
+  function searchPatients(q) { /* live search hook */ }
+</script>
+</body>
+</html>

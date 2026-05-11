@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book Appointment — HealthFirst Clinic</title>
+<meta name="description" content="Book a doctor appointment online at HealthFirst Clinic, Indore. Choose your doctor, pick a time slot, and get instant confirmation.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏥</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="mainNav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">🏥</span>
+      <span class="logo-text">HealthFirst</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html#doctors">Doctors</a></li>
+      <li><a href="index.html#specialties">Specialties</a></li>
+      <li><a href="index.html#how">How it works</a></li>
+      <li><a href="index.html#contact">Contact</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="book.html" class="btn-primary nav-book">Book Appointment</a>
+      <button class="burger" id="burger" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html#doctors">Doctors</a>
+    <a href="index.html#specialties">Specialties</a>
+    <a href="index.html#how">How it works</a>
+    <a href="index.html#contact">Contact</a>
+    <a href="book.html" class="btn-primary" style="text-align:center;margin-top:8px">Book Appointment</a>
+  </div>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div class="ph-inner">
+    <a href="index.html" class="ph-back">← Back to home</a>
+    <div class="ph-title">Book an Appointment</div>
+    <div class="ph-sub">Choose your doctor, pick a slot, and confirm in under 2 minutes.</div>
+  </div>
+</div>
+
+<!-- MAIN BOOKING LAYOUT -->
+<div class="container">
+  <div class="book-layout">
+
+    <!-- LEFT: Filters -->
+    <div class="book-left">
+      <div class="bcard">
+        <div class="bcard-title">Filter by Specialty</div>
+        <div class="spec-filter" id="specFilter">
+          <button class="sf-btn active" onclick="filterBySpec(this,'All')"><span class="sf-icon">🏥</span> All Doctors <span class="sf-count">12</span></button>
+          <button class="sf-btn" onclick="filterBySpec(this,'General')"><span class="sf-icon">🩺</span> General Medicine <span class="sf-count">4</span></button>
+          <button class="sf-btn" onclick="filterBySpec(this,'Cardiology')"><span class="sf-icon">❤️</span> Cardiology <span class="sf-count">2</span></button>
+          <button class="sf-btn" onclick="filterBySpec(this,'Pediatrics')"><span class="sf-icon">👶</span> Pediatrics <span class="sf-count">2</span></button>
+          <button class="sf-btn" onclick="filterBySpec(this,'Dermatology')"><span class="sf-icon">🧬</span> Dermatology <span class="sf-count">1</span></button>
+          <button class="sf-btn" onclick="filterBySpec(this,'Ortho')"><span class="sf-icon">🦴</span> Orthopedics <span class="sf-count">1</span></button>
+          <button class="sf-btn" onclick="filterBySpec(this,'Gynecology')"><span class="sf-icon">🌸</span> Gynecology <span class="sf-count">1</span></button>
+          <button class="sf-btn" onclick="filterBySpec(this,'ENT')"><span class="sf-icon">👂</span> ENT <span class="sf-count">1</span></button>
+        </div>
+      </div>
+
+      <div class="bcard">
+        <div class="bcard-title">Your Booking Summary</div>
+        <div id="summaryPanel" style="font-size:13px;color:var(--navy-m);line-height:1.7">
+          No appointment selected yet.<br>Choose a doctor and time slot to begin.
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Doctor list + booking panel -->
+    <div class="book-right">
+
+      <!-- Doctor listing -->
+      <div id="doctorListView">
+        <div class="doc-list" id="docList">
+
+          <div class="doc-list-card" data-spec="General" onclick="selectDoc(this,'Dr. Priya Sharma','👩‍⚕️','General Physician','400','MBBS, MD · 12 yrs exp','4.9','284')">
+            <div class="dla">👩‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Priya Sharma</div>
+              <div class="dli-spec">General Physician</div>
+              <div class="dli-meta">
+                <span>⭐ 4.9 (284 reviews)</span>
+                <span>🎓 MBBS, MD · 12 yrs exp</span>
+                <span>📍 0.4 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">11:00 AM</span>
+                <span class="dli-slot">11:30 AM</span>
+                <span class="dli-slot">2:00 PM</span>
+                <span class="dli-slot">4:30 PM</span>
+                <span style="font-size:12px;color:var(--navy-m);padding:5px 0">+4 more</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹400<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Priya Sharma','👩‍⚕️','General Physician','400','MBBS, MD · 12 yrs exp','4.9','284')">Book</button>
+              <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available today</span>
+            </div>
+          </div>
+
+          <div class="doc-list-card" data-spec="General" onclick="selectDoc(this,'Dr. Rahul Mehta','👨‍⚕️','General Physician','500','MBBS, DNB · 8 yrs exp','4.7','196')">
+            <div class="dla">👨‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Rahul Mehta</div>
+              <div class="dli-spec">General Physician</div>
+              <div class="dli-meta">
+                <span>⭐ 4.7 (196 reviews)</span>
+                <span>🎓 MBBS, DNB · 8 yrs exp</span>
+                <span>📍 0.6 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">9:30 AM</span>
+                <span class="dli-slot">10:30 AM</span>
+                <span class="dli-slot">3:00 PM</span>
+                <span class="dli-slot">5:00 PM</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹500<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Rahul Mehta','👨‍⚕️','General Physician','500','MBBS, DNB · 8 yrs exp','4.7','196')">Book</button>
+              <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available today</span>
+            </div>
+          </div>
+
+          <div class="doc-list-card" data-spec="Cardiology" onclick="selectDoc(this,'Dr. Suman Verma','👩‍⚕️','Cardiologist','800','MBBS, DM Cardiology · 15 yrs exp','4.8','142')">
+            <div class="dla">👩‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Suman Verma</div>
+              <div class="dli-spec">Cardiologist</div>
+              <div class="dli-meta">
+                <span>⭐ 4.8 (142 reviews)</span>
+                <span>🎓 MBBS, DM Cardiology · 15 yrs</span>
+                <span>📍 0.4 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">10:00 AM</span>
+                <span class="dli-slot">1:00 PM</span>
+                <span class="dli-slot">3:30 PM</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹800<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Suman Verma','👩‍⚕️','Cardiologist','800','MBBS, DM Cardiology · 15 yrs exp','4.8','142')">Book</button>
+              <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available today</span>
+            </div>
+          </div>
+
+          <div class="doc-list-card" data-spec="Pediatrics" onclick="selectDoc(this,'Dr. Arjun Patel','👨‍⚕️','Pediatrician','600','MBBS, MD Pediatrics · 10 yrs exp','4.6','98')">
+            <div class="dla">👨‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Arjun Patel</div>
+              <div class="dli-spec">Pediatrician</div>
+              <div class="dli-meta">
+                <span>⭐ 4.6 (98 reviews)</span>
+                <span>🎓 MBBS, MD Pediatrics · 10 yrs</span>
+                <span>📍 0.4 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">Tomorrow 9:00 AM</span>
+                <span class="dli-slot">Tomorrow 11:00 AM</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹600<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Arjun Patel','👨‍⚕️','Pediatrician','600','MBBS, MD Pediatrics · 10 yrs exp','4.6','98')">Book</button>
+              <span style="font-size:12px;color:var(--amber);font-weight:600">Next: Tomorrow</span>
+            </div>
+          </div>
+
+          <div class="doc-list-card" data-spec="Dermatology" onclick="selectDoc(this,'Dr. Neha Joshi','👩‍⚕️','Dermatologist','700','MBBS, DVD · 9 yrs exp','4.8','211')">
+            <div class="dla">👩‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Neha Joshi</div>
+              <div class="dli-spec">Dermatologist</div>
+              <div class="dli-meta">
+                <span>⭐ 4.8 (211 reviews)</span>
+                <span>🎓 MBBS, DVD · 9 yrs exp</span>
+                <span>📍 0.4 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">11:00 AM</span>
+                <span class="dli-slot">2:30 PM</span>
+                <span class="dli-slot">4:00 PM</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹700<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Neha Joshi','👩‍⚕️','Dermatologist','700','MBBS, DVD · 9 yrs exp','4.8','211')">Book</button>
+              <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available today</span>
+            </div>
+          </div>
+
+          <div class="doc-list-card" data-spec="Ortho" onclick="selectDoc(this,'Dr. Ramesh Singh','👨‍⚕️','Orthopedic Surgeon','900','MS Ortho · 18 yrs exp','4.7','176')">
+            <div class="dla">👨‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Ramesh Singh</div>
+              <div class="dli-spec">Orthopedic Surgeon</div>
+              <div class="dli-meta">
+                <span>⭐ 4.7 (176 reviews)</span>
+                <span>🎓 MS Ortho · 18 yrs exp</span>
+                <span>📍 0.4 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">10:00 AM</span>
+                <span class="dli-slot">12:00 PM</span>
+                <span class="dli-slot">3:00 PM</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹900<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Ramesh Singh','👨‍⚕️','Orthopedic Surgeon','900','MS Ortho · 18 yrs exp','4.7','176')">Book</button>
+              <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available today</span>
+            </div>
+          </div>
+
+          <div class="doc-list-card" data-spec="Gynecology" onclick="selectDoc(this,'Dr. Meena Agarwal','👩‍⚕️','Gynecologist','750','MS Gynecology · 14 yrs exp','4.9','308')">
+            <div class="dla">👩‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Meena Agarwal</div>
+              <div class="dli-spec">Gynecologist</div>
+              <div class="dli-meta">
+                <span>⭐ 4.9 (308 reviews)</span>
+                <span>🎓 MS Gynecology · 14 yrs exp</span>
+                <span>📍 0.4 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">9:00 AM</span>
+                <span class="dli-slot">11:30 AM</span>
+                <span class="dli-slot">2:00 PM</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹750<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Meena Agarwal','👩‍⚕️','Gynecologist','750','MS Gynecology · 14 yrs exp','4.9','308')">Book</button>
+              <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available today</span>
+            </div>
+          </div>
+
+          <div class="doc-list-card" data-spec="ENT" onclick="selectDoc(this,'Dr. Sunil Thakur','👨‍⚕️','ENT Specialist','650','MS ENT · 11 yrs exp','4.6','134')">
+            <div class="dla">👨‍⚕️</div>
+            <div class="dli">
+              <div class="dli-name">Dr. Sunil Thakur</div>
+              <div class="dli-spec">ENT Specialist</div>
+              <div class="dli-meta">
+                <span>⭐ 4.6 (134 reviews)</span>
+                <span>🎓 MS ENT · 11 yrs exp</span>
+                <span>📍 0.4 km away</span>
+              </div>
+              <div class="dli-slots">
+                <span class="dli-slot">10:30 AM</span>
+                <span class="dli-slot">1:30 PM</span>
+                <span class="dli-slot">4:30 PM</span>
+              </div>
+            </div>
+            <div class="dlr">
+              <div class="dlr-fee">₹650<small>per visit</small></div>
+              <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),'Dr. Sunil Thakur','👨‍⚕️','ENT Specialist','650','MS ENT · 11 yrs exp','4.6','134')">Book</button>
+              <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available today</span>
+            </div>
+          </div>
+
+        </div><!-- /doc-list -->
+      </div><!-- /doctorListView -->
+
+      <!-- BOOKING PANEL (shown after selecting a doctor) -->
+      <div id="bookingPanel" style="display:none">
+        <div class="booking-panel">
+          <div class="bp-header">
+            <div class="bp-doc-row">
+              <div class="bp-avatar" id="bpAvatar">👩‍⚕️</div>
+              <div>
+                <div class="bp-name" id="bpName">Dr. Priya Sharma</div>
+                <div class="bp-spec" id="bpSpec">General Physician · ₹400 · ★ 4.9</div>
+              </div>
+              <button onclick="backToList()" style="margin-left:auto;background:rgba(255,255,255,.2);border:none;color:white;font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;cursor:pointer;font-family:var(--ff)">← Change</button>
+            </div>
+          </div>
+          <div class="bp-body">
+            <div class="bp-section-label">Select Date</div>
+            <div class="date-scroller" id="dateScroller"></div>
+
+            <div class="bp-section-label" style="margin-top:18px">Select Time Slot</div>
+            <div class="time-grid" id="timeGrid"></div>
+
+            <div class="bp-section-label" style="margin-top:22px">Your Details</div>
+            <div class="patient-form">
+              <div class="form-row-2">
+                <div class="form-field">
+                  <label class="form-label">Full Name *</label>
+                  <input class="form-input" type="text" id="pName" placeholder="Anita Gupta">
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Age *</label>
+                  <input class="form-input" type="number" id="pAge" placeholder="34" min="1" max="120">
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-field">
+                  <label class="form-label">Phone Number *</label>
+                  <input class="form-input" type="tel" id="pPhone" placeholder="9876543210" maxlength="10">
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Gender</label>
+                  <select class="form-select" id="pGender">
+                    <option value="">Select gender</option>
+                    <option>Female</option>
+                    <option>Male</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-field">
+                <label class="form-label">Reason for Visit</label>
+                <textarea class="form-textarea" id="pReason" placeholder="Briefly describe your symptoms or reason for the appointment..."></textarea>
+              </div>
+            </div>
+
+            <div class="booking-summary" id="bookingSummary" style="display:none">
+              <div class="bs-row"><span class="bs-label">Doctor</span><span class="bs-value" id="sumDoc">—</span></div>
+              <div class="bs-row"><span class="bs-label">Specialty</span><span class="bs-value" id="sumSpec">—</span></div>
+              <div class="bs-row"><span class="bs-label">Date & Time</span><span class="bs-value" id="sumDateTime">—</span></div>
+              <div class="bs-row"><span class="bs-label">Patient</span><span class="bs-value" id="sumPatient">—</span></div>
+              <div class="bs-row"><span class="bs-label">Consultation Fee</span><span class="bs-value" id="sumFee" style="color:var(--teal)">—</span></div>
+            </div>
+
+            <button class="confirm-btn" id="confirmBtn" onclick="confirmBooking()">Confirm Appointment →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUCCESS VIEW -->
+      <div class="success-view" id="successView">
+        <div class="success-box">
+          <div class="success-icon">🎉</div>
+          <div class="success-title">Appointment Confirmed!</div>
+          <div class="success-token">
+            <div class="st-label">Your Token Number</div>
+            <div class="st-num" id="tokenNum">#042</div>
+          </div>
+          <div class="success-body" id="successBody">
+            Your appointment is booked. SMS confirmation has been sent to your phone.
+          </div>
+          <div class="success-actions">
+            <a href="index.html" class="btn-ghost">← Back to Home</a>
+            <button class="btn-primary" onclick="bookAnother()">Book Another →</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /book-right -->
+  </div><!-- /book-layout -->
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
