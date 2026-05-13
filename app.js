@@ -1,9 +1,8 @@
 /* ═══════════════════════════════════════════════
    HealthFirst Clinic — app.js
-   Firebase Firestore backend connected
+   Firebase Firestore — Real-time slot availability
 ═══════════════════════════════════════════════ */
 
-// ── Firebase Config ──
 const firebaseConfig = {
   apiKey: "AIzaSyBMHgnM0ThjDeOMmZAHuKOVjF14miU9Sgc",
   authDomain: "healthfirst-f218f.firebaseapp.com",
@@ -14,77 +13,76 @@ const firebaseConfig = {
   measurementId: "G-3BP7ZNRD9M"
 };
 
-// ── Load Firebase from CDN (no npm needed) ──
 let db = null;
 let firebaseReady = false;
 
 async function initFirebase() {
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-    const { getFirestore, collection, addDoc, getDocs, query, orderBy, where, serverTimestamp, onSnapshot } =
+    const { getFirestore, collection, addDoc, getDocs, query, orderBy, where, serverTimestamp } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     firebaseReady = true;
-    window._fs = { collection, addDoc, getDocs, query, orderBy, where, serverTimestamp, onSnapshot };
+    window._fs = { collection, addDoc, getDocs, query, orderBy, where, serverTimestamp };
     console.log("✅ Firebase connected");
     document.dispatchEvent(new Event("firebase-ready"));
   } catch (e) {
     console.error("Firebase init error:", e);
   }
 }
-
 initFirebase();
 
-// ── Save a booking to Firestore ──
+// ── Save booking ──
 async function saveBooking(data) {
   if (!firebaseReady) return null;
   const { collection, addDoc, serverTimestamp } = window._fs;
   try {
     const ref = await addDoc(collection(db, "bookings"), {
-      ...data,
-      status: "confirmed",
-      createdAt: serverTimestamp()
+      ...data, status: "confirmed", createdAt: serverTimestamp()
     });
     return ref.id;
-  } catch (e) {
-    console.error("Error saving booking:", e);
-    return null;
-  }
+  } catch (e) { console.error("saveBooking error:", e); return null; }
 }
 
-// ── Load all bookings ──
+// ── Load bookings (optionally filter by date) ──
 async function loadBookings(filterDate) {
   if (!firebaseReady) return [];
   const { collection, getDocs, query, orderBy, where } = window._fs;
   try {
-    let q;
-    if (filterDate) {
-      q = query(collection(db, "bookings"), where("date", "==", filterDate), orderBy("createdAt", "desc"));
-    } else {
-      q = query(collection(db, "bookings"), orderBy("createdAt", "desc"));
-    }
+    const q = filterDate
+      ? query(collection(db, "bookings"), where("date", "==", filterDate), orderBy("createdAt", "desc"))
+      : query(collection(db, "bookings"), orderBy("createdAt", "desc"));
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (e) {
-    console.error("Error loading bookings:", e);
-    return [];
-  }
+  } catch (e) { console.error("loadBookings error:", e); return []; }
+}
+
+// ── KEY FIX: Get booked slots for a specific doctor + date from Firebase ──
+async function getBookedSlots(doctorName, dateKey) {
+  if (!firebaseReady) return [];
+  const { collection, getDocs, query, where } = window._fs;
+  try {
+    const q = query(
+      collection(db, "bookings"),
+      where("doctor", "==", doctorName),
+      where("date", "==", dateKey),
+      where("status", "==", "confirmed")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data().slot);
+  } catch (e) { console.error("getBookedSlots error:", e); return []; }
 }
 
 // ── Update booking status ──
 async function updateBookingStatus(id, status) {
   if (!firebaseReady) return;
   const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-  try {
-    await updateDoc(doc(db, "bookings", id), { status });
-  } catch (e) {
-    console.error("Error updating booking:", e);
-  }
+  try { await updateDoc(doc(db, "bookings", id), { status }); }
+  catch (e) { console.error("updateBookingStatus error:", e); }
 }
 
-// ── NAV: scroll + burger ──
+// ── NAV ──
 (function () {
   const nav = document.getElementById("mainNav");
   const burger = document.getElementById("burger");
@@ -150,7 +148,7 @@ if (document.getElementById("docList")) {
     document.getElementById("bpName").textContent   = name;
     document.getElementById("bpSpec").textContent   = `${spec} · ₹${fee} · ★ ${rating}`;
     buildDatePicker();
-    buildTimeSlots();
+    buildTimeSlots(); // will fetch from Firebase
     updateSummaryPanel();
     document.getElementById("bookingPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -163,10 +161,17 @@ if (document.getElementById("docList")) {
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
 
-  const DAYS  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const DAYS       = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const MONTHS     = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const MONTH_LONG = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   let selectedDateIdx = 0;
+
+  function getSelectedDateKey() {
+    const today = new Date();
+    const d = new Date(today);
+    d.setDate(today.getDate() + selectedDateIdx);
+    return d.toISOString().split("T")[0];
+  }
 
   function buildDatePicker() {
     const scroller = document.getElementById("dateScroller");
@@ -178,28 +183,63 @@ if (document.getElementById("docList")) {
       const chip = document.createElement("button");
       chip.className = "date-chip" + (i === selectedDateIdx ? " selected" : "");
       chip.innerHTML = `<span class="dc-day">${DAYS[d.getDay()]}</span><span class="dc-num">${d.getDate()}</span>`;
-      chip.addEventListener("click", () => { selectedDateIdx = i; buildDatePicker(); buildTimeSlots(); updateSummaryPanel(); });
+      chip.addEventListener("click", () => {
+        selectedDateIdx = i;
+        selectedSlot = null; // reset selected slot when date changes
+        buildDatePicker();
+        buildTimeSlots(); // re-fetch booked slots for new date
+        updateSummaryPanel();
+      });
       scroller.appendChild(chip);
     }
   }
 
-  const ALL_SLOTS    = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM","12:00 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM"];
-  const BOOKED_SLOTS = { 0:["9:00 AM","10:00 AM","12:00 PM"], 1:["9:30 AM","11:00 AM"], 2:[] };
-  let selectedSlot = "11:00 AM";
+  const ALL_SLOTS = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
+                     "12:00 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM"];
+  let selectedSlot = null;
 
-  function buildTimeSlots() {
+  // ── THE KEY FIX: fetch real booked slots from Firebase, then render ──
+  async function buildTimeSlots() {
     const grid = document.getElementById("timeGrid");
     if (!grid) return;
-    const booked = BOOKED_SLOTS[selectedDateIdx] || [];
+
+    // Show loading state
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:16px;text-align:center;font-size:13px;color:var(--navy-m)">Loading available slots...</div>`;
+
+    // Fetch which slots are already booked for this doctor + date
+    let bookedSlots = [];
+    if (selectedDoc && firebaseReady) {
+      const dateKey = getSelectedDateKey();
+      bookedSlots = await getBookedSlots(selectedDoc.name, dateKey);
+    }
+
+    // Render slots
     grid.innerHTML = "";
+    let hasAvailable = false;
     ALL_SLOTS.forEach(slot => {
-      const isBooked = booked.includes(slot);
+      const isBooked = bookedSlots.includes(slot);
+      if (!isBooked) hasAvailable = true;
       const btn = document.createElement("button");
       btn.className = "time-slot" + (isBooked ? " booked" : slot === selectedSlot ? " selected" : "");
       btn.textContent = slot;
-      if (!isBooked) btn.addEventListener("click", () => { selectedSlot = slot; buildTimeSlots(); updateSummaryPanel(); });
+      if (isBooked) {
+        btn.title = "This slot is already booked";
+        btn.disabled = true;
+      } else {
+        btn.addEventListener("click", () => {
+          selectedSlot = slot;
+          // Update visual selection without re-fetching Firebase
+          grid.querySelectorAll(".time-slot").forEach(b => b.classList.remove("selected"));
+          btn.classList.add("selected");
+          updateSummaryPanel();
+        });
+      }
       grid.appendChild(btn);
     });
+
+    if (!hasAvailable) {
+      grid.innerHTML = `<div style="grid-column:1/-1;padding:16px;text-align:center;font-size:13px;color:var(--red)">❌ No slots available for this date. Please pick another date.</div>`;
+    }
   }
 
   function updateSummaryPanel() {
@@ -210,7 +250,7 @@ if (document.getElementById("docList")) {
       <div style="display:flex;flex-direction:column;gap:8px">
         <div><span style="font-weight:700;color:var(--navy)">${selectedDoc.name}</span></div>
         <div style="color:var(--teal);font-weight:600">${selectedDoc.spec}</div>
-        <div>📅 ${dateStr} · ${selectedSlot}</div>
+        <div>📅 ${dateStr} · ${selectedSlot || "No slot selected"}</div>
         <div>💰 Fee: <strong>₹${selectedDoc.fee}</strong></div>
       </div>`;
     const sb = document.getElementById("bookingSummary");
@@ -218,7 +258,7 @@ if (document.getElementById("docList")) {
       sb.style.display = "block";
       document.getElementById("sumDoc").textContent      = selectedDoc.name;
       document.getElementById("sumSpec").textContent     = selectedDoc.spec;
-      document.getElementById("sumDateTime").textContent = `${dateStr} · ${selectedSlot}`;
+      document.getElementById("sumDateTime").textContent = `${dateStr} · ${selectedSlot || "—"}`;
       document.getElementById("sumFee").textContent      = `₹${selectedDoc.fee}`;
     }
   }
@@ -232,30 +272,38 @@ if (document.getElementById("docList")) {
 
     if (!name || !phone) { alert("Please fill in your name and phone number."); return; }
     if (phone.length < 10) { alert("Please enter a valid 10-digit phone number."); return; }
+    if (!selectedSlot) { alert("Please select a time slot."); return; }
 
     const confirmBtn = document.getElementById("confirmBtn");
     confirmBtn.textContent = "Saving...";
     confirmBtn.disabled = true;
 
     const today = new Date(); const d = new Date(today); d.setDate(today.getDate() + selectedDateIdx);
-    const dateStr     = `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTH_LONG[d.getMonth()]}`;
-    const dateKey     = d.toISOString().split("T")[0];
-    const token       = "#" + String(Math.floor(Math.random() * 900) + 100);
+    const dateStr = `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTH_LONG[d.getMonth()]}`;
+    const dateKey = getSelectedDateKey();
+    const token   = "#" + String(Math.floor(Math.random() * 900) + 100);
 
-    const bookingData = {
+    // Double-check slot is still available before saving
+    const stillBooked = await getBookedSlots(selectedDoc.name, dateKey);
+    if (stillBooked.includes(selectedSlot)) {
+      alert("⚠️ Sorry! This slot was just booked by someone else. Please select another slot.");
+      confirmBtn.textContent = "Confirm Appointment →";
+      confirmBtn.disabled = false;
+      selectedSlot = null;
+      buildTimeSlots(); // refresh slots
+      return;
+    }
+
+    const savedId = await saveBooking({
       patientName: name, phone, age, gender, reason,
       doctor: selectedDoc.name, specialty: selectedDoc.spec,
       fee: selectedDoc.fee, date: dateKey, dateDisplay: dateStr,
       slot: selectedSlot, token
-    };
-
-    // Save to Firebase
-    const savedId = await saveBooking(bookingData);
+    });
 
     confirmBtn.textContent = "Confirm Appointment →";
     confirmBtn.disabled = false;
 
-    // Show success
     document.getElementById("bookingPanel").style.display = "none";
     const sv = document.getElementById("successView");
     sv.classList.add("show");
@@ -264,10 +312,10 @@ if (document.getElementById("docList")) {
       <strong>${name}</strong>, your appointment with <strong>${selectedDoc.name}</strong> (${selectedDoc.spec}) is confirmed.<br><br>
       📅 <strong>${dateStr}</strong> at <strong>${selectedSlot}</strong><br>
       💰 Consultation fee: <strong>₹${selectedDoc.fee}</strong> (pay at clinic)<br><br>
-      📲 SMS confirmation sent to <strong>${phone}</strong><br>
+      📲 Confirmation sent to <strong>${phone}</strong><br>
       ⏰ Please arrive 10 minutes before your slot.<br>
       🆔 Bring any previous prescriptions or reports.<br><br>
-      ${savedId ? `<span style="color:var(--green);font-size:12px">✅ Booking saved (ID: ${savedId.slice(0,8)}...)</span>` : ""}
+      ${savedId ? `<span style="color:var(--green);font-size:12px">✅ Booking ID: ${savedId.slice(0,8)}...</span>` : ""}
     `;
     sv.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -275,13 +323,18 @@ if (document.getElementById("docList")) {
   window.bookAnother = function () {
     document.getElementById("successView").classList.remove("show");
     document.getElementById("doctorListView").style.display = "block";
-    selectedDoc = null; selectedDateIdx = 0; selectedSlot = "11:00 AM";
+    selectedDoc = null; selectedDateIdx = 0; selectedSlot = null;
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
+
+  // Re-fetch slots when Firebase becomes ready (in case it loaded after selectDoc)
+  document.addEventListener("firebase-ready", () => {
+    if (selectedDoc) buildTimeSlots();
+  });
 }
 
 /* ═══════════════════════════════════
-   DOCTOR DASHBOARD — load real bookings
+   DOCTOR DASHBOARD
 ═══════════════════════════════════ */
 if (document.getElementById("queue-upcoming")) {
   document.addEventListener("firebase-ready", loadTodayQueue);
@@ -292,7 +345,7 @@ if (document.getElementById("queue-upcoming")) {
     const container = document.getElementById("queue-upcoming");
 
     if (bookings.length === 0) {
-      container.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings yet for today. <br><br><a href="book.html" style="color:var(--teal);font-weight:600">View booking page →</a></div>`;
+      container.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings yet for today.<br><br><a href="book.html" style="color:var(--teal);font-weight:600">View booking page →</a></div>`;
       return;
     }
 
@@ -311,7 +364,6 @@ if (document.getElementById("queue-upcoming")) {
           </div>
         </div>`).join("");
 
-    // Update queue count
     const countEl = document.getElementById("waitingCount");
     if (countEl) countEl.textContent = bookings.filter(b => b.status === "confirmed").length;
     const kpiEl = document.getElementById("kpiToday");
@@ -332,39 +384,33 @@ if (document.getElementById("queue-upcoming")) {
 }
 
 /* ═══════════════════════════════════
-   ADMIN PANEL — load real data
+   ADMIN PANEL
 ═══════════════════════════════════ */
 if (document.getElementById("recentBookingsTable")) {
   document.addEventListener("firebase-ready", loadAdminData);
 
   async function loadAdminData() {
     const bookings = await loadBookings();
-
-    // Recent bookings table
     const table = document.getElementById("recentBookingsTable");
     if (table) {
-      if (bookings.length === 0) {
-        table.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings yet. Share your booking page to get started!</div>`;
-      } else {
-        table.innerHTML = bookings.slice(0, 20).map(b => `
-          <div class="appt-item">
-            <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${b.patientName?.slice(0,2).toUpperCase()}</div>
-            <div class="ai-info">
-              <div class="ai-name">${b.patientName} → ${b.doctor}</div>
-              <div class="ai-detail">${b.specialty} · ${b.dateDisplay} ${b.slot} · ₹${b.fee} · Token ${b.token}</div>
-            </div>
-            <span class="status-badge ${b.status === "done" ? "sb-done" : b.status === "cancelled" ? "sb-cancelled" : "sb-waiting"}">${b.status}</span>
-          </div>`).join("");
-      }
+      table.innerHTML = bookings.length === 0
+        ? `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings yet.</div>`
+        : bookings.slice(0, 20).map(b => `
+            <div class="appt-item">
+              <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${b.patientName?.slice(0,2).toUpperCase()}</div>
+              <div class="ai-info">
+                <div class="ai-name">${b.patientName} → ${b.doctor}</div>
+                <div class="ai-detail">${b.specialty} · ${b.dateDisplay} ${b.slot} · ₹${b.fee} · Token ${b.token}</div>
+              </div>
+              <span class="status-badge ${b.status==="done"?"sb-done":b.status==="cancelled"?"sb-cancelled":"sb-waiting"}">${b.status}</span>
+            </div>`).join("");
     }
 
-    // Update KPIs
     const thisMonth = bookings.filter(b => {
       if (!b.date) return false;
       const d = new Date(b.date); const now = new Date();
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
-
     const revenue = thisMonth.reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
     const el = id => document.getElementById(id);
     if (el("adminTotalBookings")) el("adminTotalBookings").textContent = thisMonth.length;
@@ -373,7 +419,7 @@ if (document.getElementById("recentBookingsTable")) {
   }
 }
 
-// Home page smooth scroll
+// Home smooth scroll
 if (document.querySelector(".hero")) {
   document.querySelectorAll('a[href^="#"]').forEach(a => {
     a.addEventListener("click", e => {
