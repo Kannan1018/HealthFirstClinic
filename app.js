@@ -19,6 +19,14 @@ const firebaseConfig = {
 
 const RAZORPAY_KEY = "rzp_test_SokQ6RRs3wd0oH";
 
+/* ─────────────────────────────────────────────
+   🔐 ADMIN EMAIL — change this to YOUR email
+   Then create this same account in:
+   Firebase Console → Authentication → Users
+   See SECURITY-SETUP.md for full instructions.
+───────────────────────────────────────────── */
+const ADMIN_EMAIL = "REPLACE_WITH_YOUR_EMAIL@example.com";
+
 /* ─── Specialty catalog ─── */
 const SPECIALTIES = [
   { key: "General",      label: "General Medicine", icon: "🩺" },
@@ -82,24 +90,117 @@ async function initFirebase() {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
     const { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, where, serverTimestamp } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } =
+      await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
+    const auth = getAuth(app);
     firebaseReady = true;
     window._fs = { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, where, serverTimestamp };
+    window._auth = { auth, signInWithEmailAndPassword, signOut };
     console.log("✅ Firebase connected");
     document.dispatchEvent(new Event("firebase-ready"));
+
+    // Auth-gated pages: listen for state changes
+    onAuthStateChanged(auth, handleAuthStateChange);
   } catch (e) {
     console.error("Firebase init error:", e);
   }
 }
 initFirebase();
 
+/* ═══════════════════════════════════
+   AUTH GATE — admin.html & doctor.html
+═══════════════════════════════════ */
+function handleAuthStateChange(user) {
+  window._currentUser = user;
+
+  const gate = document.getElementById("authGate");
+  if (!gate) return; // page doesn't need auth
+
+  const content = document.getElementById("authedContent");
+  const loading = document.getElementById("authLoading");
+  const loginForm = document.getElementById("authLogin");
+  const errEl = document.getElementById("loginError");
+
+  if (user && user.email === ADMIN_EMAIL) {
+    // Signed in as admin — show admin content
+    gate.style.display = "none";
+    if (content) content.style.display = "";
+    const emailEl = document.getElementById("authedEmail");
+    if (emailEl) emailEl.textContent = user.email;
+    document.dispatchEvent(new Event("admin-ready"));
+  } else if (user) {
+    // Signed in but wrong email — sign them out
+    if (errEl) errEl.textContent = "This account doesn't have admin access. Try a different email.";
+    window._auth.signOut(window._auth.auth);
+  } else {
+    // Not signed in — show login form
+    if (loading) loading.style.display = "none";
+    if (loginForm) loginForm.style.display = "";
+    if (content) content.style.display = "none";
+    gate.style.display = "";
+  }
+}
+
+window.doAdminLogin = async function () {
+  const email = document.getElementById("loginEmail")?.value.trim();
+  const password = document.getElementById("loginPassword")?.value;
+  const errEl = document.getElementById("loginError");
+  if (errEl) errEl.textContent = "";
+  if (!email || !password) {
+    if (errEl) errEl.textContent = "Please enter both email and password.";
+    return;
+  }
+  if (!window._auth) {
+    if (errEl) errEl.textContent = "Connecting... please wait a moment and try again.";
+    return;
+  }
+  const btn = document.getElementById("loginBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Signing in..."; }
+  try {
+    await window._auth.signInWithEmailAndPassword(window._auth.auth, email, password);
+    // success path handled by handleAuthStateChange
+  } catch (e) {
+    console.error("Login error:", e);
+    if (errEl) {
+      if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
+        errEl.textContent = "Wrong email or password. Please try again.";
+      } else if (e.code === "auth/too-many-requests") {
+        errEl.textContent = "Too many failed attempts. Try again in a few minutes.";
+      } else {
+        errEl.textContent = "Sign-in failed: " + (e.message || "unknown error");
+      }
+    }
+    if (btn) { btn.disabled = false; btn.textContent = "Sign In"; }
+  }
+};
+
+window.doAdminLogout = async function () {
+  if (!confirm("Sign out of admin?")) return;
+  try {
+    await window._auth.signOut(window._auth.auth);
+  } catch (e) { console.error(e); }
+  location.reload();
+};
+
 // ── Firebase helpers ──
 async function saveBooking(data) {
   if (!firebaseReady) return null;
   const { collection, addDoc, serverTimestamp } = window._fs;
   try {
+    // 1. Save full booking (admin-only readable — contains patient PII)
     const ref = await addDoc(collection(db, "bookings"), { ...data, createdAt: serverTimestamp() });
+    // 2. Save lightweight slot record (publicly readable, no PII — used by booking page to show slot availability)
+    try {
+      await addDoc(collection(db, "bookedSlots"), {
+        doctorDate: data.doctorDate,
+        slot: data.slot,
+        bookingId: ref.id,
+        status: "confirmed",
+        createdAt: serverTimestamp()
+      });
+    } catch (slotErr) { console.warn("bookedSlots write failed:", slotErr); }
     return ref.id;
   } catch (e) { console.error("saveBooking:", e); return null; }
 }
@@ -139,7 +240,8 @@ async function getBookedSlots(doctorName, dateKey) {
   if (!firebaseReady) return [];
   const { collection, getDocs, query, where } = window._fs;
   try {
-    const q = query(collection(db, "bookings"), where("doctorDate", "==", doctorName + "_" + dateKey));
+    // Reads the public bookedSlots collection (no PII) for slot availability
+    const q = query(collection(db, "bookedSlots"), where("doctorDate", "==", doctorName + "_" + dateKey));
     const snap = await getDocs(q);
     return snap.docs.map(d => d.data()).filter(b => b.status !== "cancelled").map(b => b.slot);
   } catch (e) { console.error("getBookedSlots:", e); return []; }
@@ -147,9 +249,20 @@ async function getBookedSlots(doctorName, dateKey) {
 
 async function updateBookingStatus(id, status) {
   if (!firebaseReady) return;
-  const { doc, updateDoc } = window._fs;
-  try { await updateDoc(doc(db, "bookings", id), { status }); }
-  catch (e) { console.error("updateStatus:", e); }
+  const { doc, updateDoc, collection, getDocs, query, where } = window._fs;
+  try {
+    await updateDoc(doc(db, "bookings", id), { status });
+    // If cancelled, also free up the public slot
+    if (status === "cancelled") {
+      try {
+        const q = query(collection(db, "bookedSlots"), where("bookingId", "==", id));
+        const snap = await getDocs(q);
+        for (const d of snap.docs) {
+          await updateDoc(doc(db, "bookedSlots", d.id), { status: "cancelled" });
+        }
+      } catch (slotErr) { console.warn("bookedSlots cancel failed:", slotErr); }
+    }
+  } catch (e) { console.error("updateStatus:", e); }
 }
 
 /* ─── Doctor CRUD ─── */
@@ -760,7 +873,7 @@ if (document.getElementById("docList")) {
    DOCTOR DASHBOARD
 ═══════════════════════════════════ */
 if (document.getElementById("queue-upcoming")) {
-  document.addEventListener("firebase-ready", loadTodayQueue);
+  document.addEventListener("admin-ready", loadTodayQueue);
 
   async function loadTodayQueue() {
     const today = new Date().toISOString().split("T")[0];
@@ -820,7 +933,7 @@ if (document.getElementById("queue-upcoming")) {
    ADMIN PANEL — bookings + doctor management + applications
 ═══════════════════════════════════ */
 if (document.getElementById("recentBookingsTable") || document.getElementById("docManageList")) {
-  document.addEventListener("firebase-ready", loadAdminData);
+  document.addEventListener("admin-ready", loadAdminData);
 
   async function loadAdminData() {
     const bookings = await loadBookings();

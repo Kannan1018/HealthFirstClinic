@@ -7,8 +7,57 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<style>
+  /* ─── AUTH GATE ─── */
+  .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
+  .auth-card { background: white; border-radius: var(--r-xl); padding: 40px 36px; width: 100%; max-width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  .auth-logo { font-family: var(--ff-d); font-size: 22px; font-weight: 700; color: var(--teal); margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+  .auth-card h1 { font-family: var(--ff-d); font-size: 28px; font-weight: 700; color: var(--navy); margin-bottom: 8px; line-height: 1.2; }
+  .auth-card p.auth-sub { font-size: 14px; color: var(--navy-m); margin-bottom: 24px; line-height: 1.5; }
+  .auth-card input { width: 100%; padding: 12px 14px; border: 1.5px solid var(--border-md); border-radius: var(--r); font-size: 14.5px; font-family: var(--ff); color: var(--navy); background: var(--bg); outline: none; margin-bottom: 12px; transition: border-color .15s; }
+  .auth-card input:focus { border-color: var(--teal); background: white; }
+  .auth-card button.auth-submit { width: 100%; background: var(--teal); color: white; border: none; border-radius: var(--r); padding: 13px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: var(--ff); transition: all .18s; margin-top: 6px; }
+  .auth-card button.auth-submit:hover:not(:disabled) { background: var(--teal-d); }
+  .auth-card button.auth-submit:disabled { opacity: .6; cursor: not-allowed; }
+  .auth-error { color: var(--red); font-size: 13px; margin-top: 12px; text-align: center; min-height: 18px; line-height: 1.4; }
+  .auth-back { display: block; text-align: center; margin-top: 18px; font-size: 13px; color: var(--navy-m); text-decoration: none; }
+  .auth-back:hover { color: var(--teal); }
+  .auth-info-bar { background: var(--teal-l); padding: 8px 24px; font-size: 12px; color: var(--teal-d); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--teal-ll); }
+  .auth-info-bar .signout-btn { background: none; border: 1px solid var(--teal); color: var(--teal-d); padding: 4px 12px; border-radius: 14px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: var(--ff); transition: all .15s; }
+  .auth-info-bar .signout-btn:hover { background: var(--teal); color: white; }
+</style>
 </head>
 <body>
+
+<!-- ─── AUTH GATE ─── -->
+<div id="authGate" class="auth-gate">
+  <div class="auth-card">
+    <div id="authLoading">
+      <div style="text-align:center;padding:40px 0">
+        <div style="font-size:40px;margin-bottom:14px">👨‍⚕️</div>
+        <div style="color:var(--navy-m);font-size:14px">Checking access...</div>
+      </div>
+    </div>
+    <div id="authLogin" style="display:none">
+      <div class="auth-logo"><span>🏥</span><span>HealthFirst</span></div>
+      <h1>Doctor Dashboard</h1>
+      <p class="auth-sub">Sign in to access today's queue and manage appointments.</p>
+      <input type="email" id="loginEmail" placeholder="Email" autocomplete="email" autocapitalize="off">
+      <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" onkeypress="if(event.key==='Enter')doAdminLogin()">
+      <button class="auth-submit" id="loginBtn" onclick="doAdminLogin()">Sign In</button>
+      <div id="loginError" class="auth-error"></div>
+      <a href="index.html" class="auth-back">← Back to public site</a>
+    </div>
+  </div>
+</div>
+
+<!-- ─── DOCTOR CONTENT (shown only when signed in) ─── -->
+<div id="authedContent" style="display:none">
+
+<div class="auth-info-bar">
+  <span>🔓 Signed in as <strong id="authedEmail">—</strong></span>
+  <button class="signout-btn" onclick="doAdminLogout()">Sign Out</button>
+</div>
 
 <nav id="mainNav">
   <div class="nav-inner">
@@ -384,7 +433,9 @@
   </main>
 </div>
 
-<script src="app.js?v=3"></script>
+</div><!-- /authedContent -->
+
+<script src="app.js?v=4"></script>
 <script>
   // Set today's date
   const d = new Date();
