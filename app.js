@@ -1244,34 +1244,67 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
 
   window.adminAddDoctor = async function () {
     const get = id => document.getElementById(id)?.value.trim();
+    const specialty = get("ndSpecialty");
+    const pricingEl = document.querySelector('input[name="ndPricingModel"]:checked');
+
     const data = {
       name: get("ndName"),
       email: (get("ndEmail") || "").toLowerCase(),
-      specialty: get("ndSpecialty"),
-      specialtyCategory: get("ndCategory"),
-      qualification: get("ndQual"),
-      experience: get("ndExp"),
-      fee: parseInt(get("ndFee")) || 0,
-      city: get("ndCity"),
-      state: get("ndState"),
+      phone: get("ndPhone"),
       clinicPhone: get("ndClinicPhone"),
+      fee: parseInt(get("ndFee")) || 0,
+      specialty: specialty,
+      specialtyCategory: mapSpecialtyToKey(specialty),
+      qualification: get("ndQual"),
+      experience: get("ndExp") ? (get("ndExp") + " years experience") : "",
+      state: get("ndState"),
+      city: get("ndCity"),
       clinicAddress: get("ndClinicAddress"),
+      pricingModel: pricingEl ? pricingEl.value : "subscription",
       avatar: get("ndAvatar") || "👨‍⚕️"
     };
-    if (!data.name || !data.email || !data.specialty || !data.fee) {
-      alert("Please fill in at least: Name, Email, Specialty, and Fee.\n\nThe email is the doctor's login email — you'll create their Firebase Auth account separately.");
-      return;
+
+    // Required field validation — matches the application form's required fields
+    const required = [
+      ["name", "Doctor Name", "ndName"],
+      ["email", "Doctor's Login Email", "ndEmail"],
+      ["phone", "Personal Phone / WhatsApp", "ndPhone"],
+      ["clinicPhone", "Clinic Phone Number", "ndClinicPhone"],
+      ["fee", "Consultation Fee", "ndFee"],
+      ["specialty", "Specialty", "ndSpecialty"],
+      ["qualification", "Qualification", "ndQual"],
+      ["state", "State", "ndState"],
+      ["city", "City", "ndCity"],
+      ["clinicAddress", "Clinic Name / Address", "ndClinicAddress"]
+    ];
+    for (const [field, label, elId] of required) {
+      if (!data[field]) {
+        alert(`Please fill in: ${label}`);
+        document.getElementById(elId)?.focus();
+        return;
+      }
     }
     if (!data.email.includes("@") || !data.email.includes(".")) {
       alert("Please enter a valid email address.");
+      document.getElementById("ndEmail")?.focus();
       return;
     }
+
+    // Check duplicate
+    const existing = await loadDoctorByEmail(data.email);
+    if (existing) {
+      alert(`⚠️ A doctor with email ${data.email} already exists on the platform.`);
+      return;
+    }
+
     const id = await saveDoctor(data);
     if (id) {
       alert(`✅ Dr. ${data.name} added.\n\n⚠️ NEXT STEP: Go to Firebase Console → Authentication → Add user → create login for ${data.email}, then share the password with the doctor on WhatsApp.`);
-      ["ndName","ndEmail","ndSpecialty","ndQual","ndExp","ndFee","ndCity","ndState","ndClinicPhone","ndClinicAddress","ndAvatar"].forEach(f => {
+      ["ndName","ndEmail","ndPhone","ndClinicPhone","ndSpecialty","ndQual","ndExp","ndFee","ndCity","ndState","ndClinicAddress","ndAvatar"].forEach(f => {
         const el = document.getElementById(f); if (el) el.value = "";
       });
+      const subRadio = document.querySelector('input[name="ndPricingModel"][value="subscription"]');
+      if (subRadio) subRadio.checked = true;
       loadAdminData();
     } else {
       alert("❌ Failed to add doctor. Please try again.");
@@ -1304,14 +1337,15 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     const doctorData = {
       name: app.name,
       email: (app.email || "").toLowerCase(),
+      phone: app.phone || "",
+      clinicPhone: app.clinicPhone || "",
       specialty: app.specialty,
       specialtyCategory: mapSpecialtyToKey(app.specialty),
       qualification: app.qualification || "",
       experience: app.experience ? (app.experience + " years experience") : "",
       fee: parseInt(app.consultationFee) || 0,
-      city: app.city || "",
       state: app.state || "",
-      clinicPhone: app.clinicPhone || "",
+      city: app.city || "",
       clinicAddress: app.clinicAddress || "",
       pricingModel: app.pricingModel || "subscription",
       avatar: "👨‍⚕️"
@@ -1510,6 +1544,7 @@ if (document.getElementById("doctorApplicationForm")) {
       ["experience", "Years of Experience", "appExp"],
       ["state", "State of Practice", "appState"],
       ["city", "City of Practice", "appCity"],
+      ["clinicAddress", "Clinic Name / Address", "appClinicAddress"],
       ["message", "The 'Anything else' field", "appMessage"]
     ];
     for (const [field, label, elId] of required) {
