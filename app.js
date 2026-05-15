@@ -52,6 +52,25 @@ const SPECIALTIES = [
   { key: "Other",        label: "Other",            icon: "🏥" }
 ];
 
+/* Map display-friendly specialty names (from for-doctors application form) → category keys */
+const SPECIALTY_DISPLAY_TO_KEY = {
+  "General Physician": "General",
+  "Cardiologist": "Cardiology",
+  "Pediatrician": "Pediatrics",
+  "Dermatologist": "Dermatology",
+  "Orthopedic Surgeon": "Ortho",
+  "Gynecologist": "Gynecology",
+  "ENT Specialist": "ENT",
+  "Ophthalmologist": "Ophthalmology",
+  "Dentist": "Dental",
+  "Psychiatrist": "Psychiatry"
+};
+
+function mapSpecialtyToKey(displayName) {
+  if (!displayName) return "Other";
+  return SPECIALTY_DISPLAY_TO_KEY[displayName] || "Other";
+}
+
 /* ─── India: states & cities ─── */
 const INDIA_STATES_CITIES = {
   "Andhra Pradesh": ["Visakhapatnam","Vijayawada","Guntur","Tirupati","Kakinada","Nellore","Kurnool","Rajahmundry","Anantapur","Other"],
@@ -1180,22 +1199,31 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
             const location = [a.city, a.state].filter(Boolean).map(escapeHtml).join(", ");
             const pricingLabel = a.pricingModel === "commission" ? "10% per booking" : "₹2,000/mo subscription";
             const certs = Array.isArray(a.certifications) ? a.certifications : [];
+            const status = a.status || "pending";
+            const statusClass = status === "approved" ? "sb-done" : (status === "rejected" ? "sb-cancelled" : "sb-waiting");
+            const isPending = status === "pending";
+
             return `
-            <div class="appt-item" style="flex-wrap:wrap;align-items:flex-start">
+            <div class="appt-item" style="flex-wrap:wrap;align-items:flex-start;${!isPending ? 'opacity:0.7' : ''}">
               <div class="ai-token" style="background:var(--amber-l);color:var(--amber);font-size:14px">${escapeHtml((a.name||"??").slice(0,2).toUpperCase())}</div>
               <div class="ai-info">
-                <div class="ai-name">${escapeHtml(a.name)} · ${escapeHtml(a.specialty||"")}</div>
-                <div class="ai-detail">📞 ${escapeHtml(a.phone||"")} · ✉️ ${escapeHtml(a.email||"")}${location ? " · 📍 " + location : ""}${a.experience ? " · " + escapeHtml(a.experience) + " yrs" : ""}${a.qualification ? " · 🎓 " + escapeHtml(a.qualification) : ""}</div>
-                <div class="ai-detail" style="margin-top:3px">💳 Prefers: <strong>${pricingLabel}</strong></div>
-                ${a.message ? `<div class="ai-detail" style="font-style:italic;margin-top:4px">"${escapeHtml(a.message)}"</div>` : ""}
+                <div class="ai-name">${escapeHtml(a.name)} · ${escapeHtml(a.specialty||"")}${a.consultationFee ? " · ₹" + escapeHtml(a.consultationFee) : ""}</div>
+                <div class="ai-detail">📞 ${escapeHtml(a.phone||"")}${a.clinicPhone ? " · 🏥 " + escapeHtml(a.clinicPhone) : ""} · ✉️ ${escapeHtml(a.email||"")}</div>
+                <div class="ai-detail" style="margin-top:3px">${location ? "📍 " + location : ""}${a.clinicAddress ? " — " + escapeHtml(a.clinicAddress) : ""}</div>
+                <div class="ai-detail" style="margin-top:3px">🎓 ${escapeHtml(a.qualification||"—")}${a.experience ? " · " + escapeHtml(a.experience) + " yrs exp" : ""} · 💳 ${pricingLabel}</div>
+                ${a.message ? `<div class="ai-detail" style="font-style:italic;margin-top:6px;padding:8px 10px;background:var(--bg);border-radius:var(--r);border-left:3px solid var(--teal)">"${escapeHtml(a.message)}"</div>` : ""}
                 ${certs.length > 0 ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${certs.map(c => `<a href="${c.base64}" download="${escapeHtml(c.name)}" style="font-size:11px;color:var(--teal-d);font-weight:600;padding:4px 10px;background:var(--teal-l);border-radius:14px;text-decoration:none;border:1px solid var(--teal-ll)" title="Click to download">📎 ${escapeHtml(c.name)} <span style="opacity:.6">${(c.size/1024).toFixed(0)}KB</span></a>`).join("")}</div>` : `<div style="margin-top:6px;font-size:11px;color:var(--navy-h);font-style:italic">No certificates uploaded</div>`}
+                ${isPending ? `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                  <button class="btn-primary" style="font-size:12px;padding:7px 14px" onclick="approveApplication('${a.id}')">✓ Approve & Add as Doctor</button>
+                  <button class="ai-btn cancel" style="font-size:12px;padding:7px 14px" onclick="rejectApplication('${a.id}')">✗ Reject</button>
+                </div>` : ""}
               </div>
-              <span class="status-badge sb-waiting">${escapeHtml(a.status||"pending")}</span>
+              <span class="status-badge ${statusClass}">${escapeHtml(status)}</span>
             </div>`;
           }).join("");
 
       const appCountEl = document.getElementById("appCount");
-      if (appCountEl) appCountEl.textContent = applications.length;
+      if (appCountEl) appCountEl.textContent = applications.filter(a => (a.status || "pending") === "pending").length;
     }
 
     const thisMonth = bookings.filter(b => {
@@ -1225,6 +1253,9 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
       experience: get("ndExp"),
       fee: parseInt(get("ndFee")) || 0,
       city: get("ndCity"),
+      state: get("ndState"),
+      clinicPhone: get("ndClinicPhone"),
+      clinicAddress: get("ndClinicAddress"),
       avatar: get("ndAvatar") || "👨‍⚕️"
     };
     if (!data.name || !data.email || !data.specialty || !data.fee) {
@@ -1238,13 +1269,81 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     const id = await saveDoctor(data);
     if (id) {
       alert(`✅ Dr. ${data.name} added.\n\n⚠️ NEXT STEP: Go to Firebase Console → Authentication → Add user → create login for ${data.email}, then share the password with the doctor on WhatsApp.`);
-      ["ndName","ndEmail","ndSpecialty","ndQual","ndExp","ndFee","ndCity","ndAvatar"].forEach(f => {
+      ["ndName","ndEmail","ndSpecialty","ndQual","ndExp","ndFee","ndCity","ndState","ndClinicPhone","ndClinicAddress","ndAvatar"].forEach(f => {
         const el = document.getElementById(f); if (el) el.value = "";
       });
       loadAdminData();
     } else {
       alert("❌ Failed to add doctor. Please try again.");
     }
+  };
+
+  /* Approve doctor application — auto-creates a doctor record from the application */
+  window.approveApplication = async function (appId) {
+    const apps = await loadDoctorApplications();
+    const app = apps.find(a => a.id === appId);
+    if (!app) { alert("Application not found."); return; }
+    if (app.status && app.status !== "pending") {
+      if (!confirm(`This application is already "${app.status}". Re-process anyway?`)) return;
+    }
+
+    if (!app.email || !app.consultationFee) {
+      alert("⚠️ This application is missing required fields (email or consultation fee). Cannot auto-approve. Use the manual 'Add Doctor' form instead.");
+      return;
+    }
+
+    // Check for duplicate email in doctors list
+    const existing = await loadDoctorByEmail((app.email || "").toLowerCase());
+    if (existing) {
+      alert(`⚠️ A doctor with email ${app.email} already exists on the platform. Cannot add duplicate.`);
+      return;
+    }
+
+    if (!confirm(`✓ Approve and add Dr. ${app.name} to the platform?\n\nThey will appear on the public site immediately.\n\nDon't forget to also create their Firebase Auth login afterward.`)) return;
+
+    const doctorData = {
+      name: app.name,
+      email: (app.email || "").toLowerCase(),
+      specialty: app.specialty,
+      specialtyCategory: mapSpecialtyToKey(app.specialty),
+      qualification: app.qualification || "",
+      experience: app.experience ? (app.experience + " years experience") : "",
+      fee: parseInt(app.consultationFee) || 0,
+      city: app.city || "",
+      state: app.state || "",
+      clinicPhone: app.clinicPhone || "",
+      clinicAddress: app.clinicAddress || "",
+      pricingModel: app.pricingModel || "subscription",
+      avatar: "👨‍⚕️"
+    };
+
+    const doctorId = await saveDoctor(doctorData);
+    if (!doctorId) { alert("❌ Failed to add doctor. Please try again."); return; }
+
+    // Mark application as approved
+    try {
+      const { doc, updateDoc } = window._fs;
+      await updateDoc(doc(db, "doctorApplications", appId), {
+        status: "approved",
+        approvedAt: window._fs.serverTimestamp(),
+        doctorId: doctorId
+      });
+    } catch (e) { console.error("Could not update application status:", e); }
+
+    alert(`✅ Dr. ${app.name} is now live on the platform!\n\n⚠️ FINAL STEP: Go to Firebase Console → Authentication → Add user → create login for:\n\n📧 ${app.email}\n🔐 (pick any temporary password)\n\nThen WhatsApp the doctor their login on ${app.phone}.`);
+    loadAdminData();
+  };
+
+  window.rejectApplication = async function (appId) {
+    if (!confirm("Reject this application?\n\nThe applicant will not be notified automatically — you should send them a message separately.")) return;
+    try {
+      const { doc, updateDoc } = window._fs;
+      await updateDoc(doc(db, "doctorApplications", appId), {
+        status: "rejected",
+        rejectedAt: window._fs.serverTimestamp()
+      });
+    } catch (e) { console.error("Could not reject:", e); alert("❌ Failed to update application."); return; }
+    loadAdminData();
   };
 
   window.removeDoctorAdmin = async function (id, name) {
@@ -1385,13 +1484,16 @@ if (document.getElementById("doctorApplicationForm")) {
 
     const data = {
       name: get("appName"),
-      email: get("appEmail"),
+      email: (get("appEmail") || "").toLowerCase(),
       phone: get("appPhone"),
+      clinicPhone: get("appClinicPhone"),
+      consultationFee: parseInt(get("appConsultationFee")) || 0,
       specialty: specialty,
       qualification: get("appQual"),
       experience: get("appExp"),
       state: get("appState"),
       city: city,
+      clinicAddress: get("appClinicAddress"),
       pricingModel: pricingModel,
       message: get("appMessage"),
       certifications: appUploadedFiles
@@ -1400,7 +1502,9 @@ if (document.getElementById("doctorApplicationForm")) {
     const required = [
       ["name", "Full Name", "appName"],
       ["email", "Email", "appEmail"],
-      ["phone", "Phone", "appPhone"],
+      ["phone", "Personal Phone", "appPhone"],
+      ["clinicPhone", "Clinic Phone Number", "appClinicPhone"],
+      ["consultationFee", "Consultation Fee", "appConsultationFee"],
       ["specialty", "Specialty", "appSpecialty"],
       ["qualification", "Qualification", "appQual"],
       ["experience", "Years of Experience", "appExp"],
@@ -1416,8 +1520,18 @@ if (document.getElementById("doctorApplicationForm")) {
       }
     }
     if (data.phone.length < 10) {
-      alert("Please enter a valid 10-digit phone number.");
+      alert("Please enter a valid 10-digit personal phone number.");
       document.getElementById("appPhone")?.focus();
+      return false;
+    }
+    if (data.clinicPhone.length < 10) {
+      alert("Please enter a valid clinic phone number (10+ digits).");
+      document.getElementById("appClinicPhone")?.focus();
+      return false;
+    }
+    if (data.consultationFee < 50 || data.consultationFee > 50000) {
+      alert("Please enter a reasonable consultation fee (₹50 to ₹50,000).");
+      document.getElementById("appConsultationFee")?.focus();
       return false;
     }
     if (!data.certifications || data.certifications.length === 0) {
