@@ -34,6 +34,46 @@ const SPECIALTIES = [
   { key: "Other",        label: "Other",            icon: "🏥" }
 ];
 
+/* ─── India: states & cities ─── */
+const INDIA_STATES_CITIES = {
+  "Andhra Pradesh": ["Visakhapatnam","Vijayawada","Guntur","Tirupati","Kakinada","Nellore","Kurnool","Rajahmundry","Anantapur","Other"],
+  "Arunachal Pradesh": ["Itanagar","Naharlagun","Pasighat","Tezpur","Other"],
+  "Assam": ["Guwahati","Dibrugarh","Silchar","Jorhat","Nagaon","Tinsukia","Tezpur","Other"],
+  "Bihar": ["Patna","Gaya","Bhagalpur","Muzaffarpur","Darbhanga","Purnia","Bihar Sharif","Arrah","Other"],
+  "Chhattisgarh": ["Raipur","Bhilai","Bilaspur","Korba","Durg","Rajnandgaon","Other"],
+  "Goa": ["Panaji","Margao","Vasco da Gama","Mapusa","Other"],
+  "Gujarat": ["Ahmedabad","Surat","Vadodara","Rajkot","Bhavnagar","Jamnagar","Junagadh","Gandhinagar","Anand","Bharuch","Other"],
+  "Haryana": ["Gurgaon","Faridabad","Panipat","Ambala","Hisar","Karnal","Sonipat","Rohtak","Yamunanagar","Other"],
+  "Himachal Pradesh": ["Shimla","Dharamshala","Solan","Mandi","Kullu","Manali","Other"],
+  "Jharkhand": ["Ranchi","Jamshedpur","Dhanbad","Bokaro","Hazaribagh","Deoghar","Other"],
+  "Karnataka": ["Bangalore","Mysore","Hubli","Mangalore","Belgaum","Gulbarga","Davangere","Bellary","Tumkur","Shimoga","Other"],
+  "Kerala": ["Kochi","Thiruvananthapuram","Kozhikode","Thrissur","Kollam","Kannur","Alappuzha","Palakkad","Malappuram","Other"],
+  "Madhya Pradesh": ["Bhopal","Indore","Jabalpur","Gwalior","Ujjain","Sagar","Dewas","Satna","Ratlam","Rewa","Other"],
+  "Maharashtra": ["Mumbai","Pune","Nagpur","Nashik","Aurangabad","Thane","Solapur","Kolhapur","Amravati","Navi Mumbai","Other"],
+  "Manipur": ["Imphal","Thoubal","Bishnupur","Other"],
+  "Meghalaya": ["Shillong","Tura","Jowai","Other"],
+  "Mizoram": ["Aizawl","Lunglei","Other"],
+  "Nagaland": ["Kohima","Dimapur","Mokokchung","Other"],
+  "Odisha": ["Bhubaneswar","Cuttack","Rourkela","Berhampur","Sambalpur","Puri","Balasore","Other"],
+  "Punjab": ["Ludhiana","Amritsar","Jalandhar","Patiala","Bathinda","Mohali","Hoshiarpur","Pathankot","Other"],
+  "Rajasthan": ["Jaipur","Jodhpur","Udaipur","Ajmer","Kota","Bikaner","Alwar","Sikar","Bhilwara","Other"],
+  "Sikkim": ["Gangtok","Namchi","Other"],
+  "Tamil Nadu": ["Chennai","Coimbatore","Madurai","Tiruchirappalli","Salem","Tirunelveli","Erode","Vellore","Thoothukudi","Tiruppur","Other"],
+  "Telangana": ["Hyderabad","Warangal","Nizamabad","Karimnagar","Khammam","Other"],
+  "Tripura": ["Agartala","Udaipur (Tripura)","Dharmanagar","Other"],
+  "Uttar Pradesh": ["Lucknow","Kanpur","Agra","Varanasi","Prayagraj","Noida","Ghaziabad","Meerut","Bareilly","Aligarh","Moradabad","Other"],
+  "Uttarakhand": ["Dehradun","Haridwar","Roorkee","Haldwani","Rishikesh","Nainital","Other"],
+  "West Bengal": ["Kolkata","Howrah","Durgapur","Asansol","Siliguri","Bardhaman","Malda","Kharagpur","Other"],
+  "Andaman and Nicobar Islands": ["Port Blair","Other"],
+  "Chandigarh": ["Chandigarh","Other"],
+  "Dadra and Nagar Haveli and Daman and Diu": ["Daman","Diu","Silvassa","Other"],
+  "Delhi": ["New Delhi","Delhi","Other"],
+  "Jammu and Kashmir": ["Srinagar","Jammu","Anantnag","Baramulla","Other"],
+  "Ladakh": ["Leh","Kargil","Other"],
+  "Lakshadweep": ["Kavaratti","Other"],
+  "Puducherry": ["Puducherry","Karaikal","Mahe","Yanam","Other"]
+};
+
 let db = null;
 let firebaseReady = false;
 
@@ -827,16 +867,23 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     if (appList) {
       appList.innerHTML = applications.length === 0
         ? `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No doctor applications yet.</div>`
-        : applications.map(a => `
-            <div class="appt-item">
+        : applications.map(a => {
+            const location = [a.city, a.state].filter(Boolean).map(escapeHtml).join(", ");
+            const pricingLabel = a.pricingModel === "commission" ? "10% per booking" : "₹2,000/mo subscription";
+            const certs = Array.isArray(a.certifications) ? a.certifications : [];
+            return `
+            <div class="appt-item" style="flex-wrap:wrap;align-items:flex-start">
               <div class="ai-token" style="background:var(--amber-l);color:var(--amber);font-size:14px">${escapeHtml((a.name||"??").slice(0,2).toUpperCase())}</div>
               <div class="ai-info">
                 <div class="ai-name">${escapeHtml(a.name)} · ${escapeHtml(a.specialty||"")}</div>
-                <div class="ai-detail">📞 ${escapeHtml(a.phone||"")} · ✉️ ${escapeHtml(a.email||"")} · ${escapeHtml(a.city||"")}${a.experience ? " · " + escapeHtml(a.experience) + " yrs" : ""}</div>
+                <div class="ai-detail">📞 ${escapeHtml(a.phone||"")} · ✉️ ${escapeHtml(a.email||"")}${location ? " · 📍 " + location : ""}${a.experience ? " · " + escapeHtml(a.experience) + " yrs" : ""}${a.qualification ? " · 🎓 " + escapeHtml(a.qualification) : ""}</div>
+                <div class="ai-detail" style="margin-top:3px">💳 Prefers: <strong>${pricingLabel}</strong></div>
                 ${a.message ? `<div class="ai-detail" style="font-style:italic;margin-top:4px">"${escapeHtml(a.message)}"</div>` : ""}
+                ${certs.length > 0 ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${certs.map(c => `<a href="${c.base64}" download="${escapeHtml(c.name)}" style="font-size:11px;color:var(--teal-d);font-weight:600;padding:4px 10px;background:var(--teal-l);border-radius:14px;text-decoration:none;border:1px solid var(--teal-ll)" title="Click to download">📎 ${escapeHtml(c.name)} <span style="opacity:.6">${(c.size/1024).toFixed(0)}KB</span></a>`).join("")}</div>` : `<div style="margin-top:6px;font-size:11px;color:var(--navy-h);font-style:italic">No certificates uploaded</div>`}
               </div>
               <span class="status-badge sb-waiting">${escapeHtml(a.status||"pending")}</span>
-            </div>`).join("");
+            </div>`;
+          }).join("");
 
       const appCountEl = document.getElementById("appCount");
       if (appCountEl) appCountEl.textContent = applications.length;
@@ -897,27 +944,173 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
    FOR-DOCTORS PAGE — application form
 ═══════════════════════════════════ */
 if (document.getElementById("doctorApplicationForm")) {
+
+  /* ─ State / City dropdowns ─ */
+  const stateSel = document.getElementById("appState");
+  if (stateSel) {
+    Object.keys(INDIA_STATES_CITIES).sort().forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s; opt.textContent = s;
+      stateSel.appendChild(opt);
+    });
+  }
+
+  window.onStateChange = function () {
+    const state = stateSel.value;
+    const citySel = document.getElementById("appCity");
+    citySel.innerHTML = '<option value="">Select city</option>';
+    const otherWrap = document.getElementById("appOtherCityWrap");
+    if (otherWrap) otherWrap.style.display = "none";
+    const otherInput = document.getElementById("appOtherCity");
+    if (otherInput) otherInput.value = "";
+    if (!state) { citySel.disabled = true; return; }
+    citySel.disabled = false;
+    INDIA_STATES_CITIES[state].forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c; opt.textContent = c;
+      citySel.appendChild(opt);
+    });
+  };
+
+  window.onCityChange = function () {
+    const city = document.getElementById("appCity").value;
+    const wrap = document.getElementById("appOtherCityWrap");
+    if (!wrap) return;
+    if (city === "Other") {
+      wrap.style.display = "block";
+      setTimeout(() => document.getElementById("appOtherCity")?.focus(), 50);
+    } else {
+      wrap.style.display = "none";
+      const inp = document.getElementById("appOtherCity"); if (inp) inp.value = "";
+    }
+  };
+
+  window.onSpecialtyChange = function () {
+    const spec = document.getElementById("appSpecialty").value;
+    const wrap = document.getElementById("appOtherSpecWrap");
+    if (!wrap) return;
+    if (spec === "Other") {
+      wrap.style.display = "block";
+      setTimeout(() => document.getElementById("appOtherSpec")?.focus(), 50);
+    } else {
+      wrap.style.display = "none";
+      const inp = document.getElementById("appOtherSpec"); if (inp) inp.value = "";
+    }
+  };
+
+  /* ─ File upload ─ */
+  let appUploadedFiles = [];
+  const MAX_FILE_SIZE = 250 * 1024; // 250 KB per file
+  const MAX_FILES = 3;
+
+  window.handleAppFiles = function (input) {
+    const files = Array.from(input.files);
+    const errors = [];
+    for (const file of files) {
+      if (appUploadedFiles.length >= MAX_FILES) {
+        errors.push(`Maximum ${MAX_FILES} files allowed. Skipped "${file.name}".`);
+        break;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`"${file.name}" is too large (${(file.size/1024).toFixed(0)} KB). Max 250 KB per file.`);
+        continue;
+      }
+      const reader = new FileReader();
+      reader.onload = ((f) => (e) => {
+        appUploadedFiles.push({
+          name: f.name, type: f.type, size: f.size, base64: e.target.result
+        });
+        renderAppFileList();
+      })(file);
+      reader.onerror = () => alert(`Could not read "${file.name}".`);
+      reader.readAsDataURL(file);
+    }
+    if (errors.length) alert(errors.join("\n"));
+    input.value = "";
+  };
+
+  window.removeAppFile = function (idx) {
+    appUploadedFiles.splice(idx, 1);
+    renderAppFileList();
+  };
+
+  function renderAppFileList() {
+    const list = document.getElementById("appFileList");
+    if (!list) return;
+    if (appUploadedFiles.length === 0) { list.innerHTML = ""; return; }
+    list.innerHTML = appUploadedFiles.map((f, i) => `
+      <div class="file-list-item">
+        <span style="font-size:16px">📎</span>
+        <span class="fli-name">${escapeHtml(f.name)}</span>
+        <span class="fli-size">${(f.size/1024).toFixed(0)} KB</span>
+        <button type="button" class="fli-remove" onclick="removeAppFile(${i})" title="Remove">×</button>
+      </div>`).join("");
+  }
+
+  /* ─ Submit ─ */
   window.submitDoctorApplication = async function (e) {
     if (e) e.preventDefault();
     const get = id => document.getElementById(id)?.value.trim();
+
+    let specialty = get("appSpecialty");
+    if (specialty === "Other") {
+      const otherSpec = get("appOtherSpec");
+      if (!otherSpec) { alert("Please specify your specialty."); document.getElementById("appOtherSpec")?.focus(); return false; }
+      specialty = otherSpec;
+    }
+
+    let city = get("appCity");
+    if (city === "Other") {
+      const otherCity = get("appOtherCity");
+      if (!otherCity) { alert("Please specify your city."); document.getElementById("appOtherCity")?.focus(); return false; }
+      city = otherCity;
+    }
+
+    const pricingModelEl = document.querySelector('input[name="pricingModel"]:checked');
+    const pricingModel = pricingModelEl ? pricingModelEl.value : "subscription";
+
     const data = {
       name: get("appName"),
       email: get("appEmail"),
       phone: get("appPhone"),
-      specialty: get("appSpecialty"),
+      specialty: specialty,
       qualification: get("appQual"),
       experience: get("appExp"),
-      city: get("appCity"),
-      message: get("appMessage")
+      state: get("appState"),
+      city: city,
+      pricingModel: pricingModel,
+      message: get("appMessage"),
+      certifications: appUploadedFiles
     };
-    if (!data.name || !data.email || !data.phone || !data.specialty) {
-      alert("Please fill in: Name, Email, Phone, and Specialty.");
-      return false;
+
+    const required = [
+      ["name", "Full Name", "appName"],
+      ["email", "Email", "appEmail"],
+      ["phone", "Phone", "appPhone"],
+      ["specialty", "Specialty", "appSpecialty"],
+      ["qualification", "Qualification", "appQual"],
+      ["experience", "Years of Experience", "appExp"],
+      ["state", "State of Practice", "appState"],
+      ["city", "City of Practice", "appCity"],
+      ["message", "The 'Anything else' field", "appMessage"]
+    ];
+    for (const [field, label, elId] of required) {
+      if (!data[field]) {
+        alert(`Please fill in: ${label}`);
+        document.getElementById(elId)?.focus();
+        return false;
+      }
     }
     if (data.phone.length < 10) {
       alert("Please enter a valid 10-digit phone number.");
+      document.getElementById("appPhone")?.focus();
       return false;
     }
+    if (!data.certifications || data.certifications.length === 0) {
+      alert("Please upload at least one certification (e.g., medical degree, registration certificate).");
+      return false;
+    }
+
     const submitBtn = document.getElementById("appSubmitBtn");
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Submitting..."; }
     const id = await saveDoctorApplication(data);
@@ -926,7 +1119,7 @@ if (document.getElementById("doctorApplicationForm")) {
       document.getElementById("doctorAppSuccess").style.display = "block";
       document.getElementById("doctorAppSuccess").scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
-      alert("Something went wrong. Please try again or email us directly.");
+      alert("Something went wrong. Your certificate files might be too large.\n\nPlease try smaller files (under 250 KB each), or email us directly at hello@healthfirst.in.");
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Submit Application →"; }
     }
     return false;
