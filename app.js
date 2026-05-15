@@ -25,7 +25,7 @@ const RAZORPAY_KEY = "rzp_test_SokQ6RRs3wd0oH";
    Firebase Console → Authentication → Users
    See SECURITY-SETUP.md for full instructions.
 ───────────────────────────────────────────── */
-const ADMIN_EMAIL = "REPLACE_WITH_YOUR_EMAIL@example.com";
+const ADMIN_EMAIL = "kannan.ag10@gmail.com";
 
 /* ─── Specialty catalog ─── */
 const SPECIALTIES = [
