@@ -1,10 +1,11 @@
 /* ═══════════════════════════════════════════════
-   HealthFirst Clinic — app.js
-   Firebase + Razorpay Payment Integration
-   Pay Online OR Pay at Clinic — both supported
+   HealthFirst — app.js
+   ✅ Live ratings from Firebase
+   ✅ Feedback form after appointment done
+   ✅ Direct Razorpay on Book click (no pay at clinic choice on click — Razorpay opens immediately)
+   ✅ Real-time slot availability
 ═══════════════════════════════════════════════ */
 
-// ── Firebase Config ──
 const firebaseConfig = {
   apiKey: "AIzaSyBMHgnM0ThjDeOMmZAHuKOVjF14miU9Sgc",
   authDomain: "healthfirst-f218f.firebaseapp.com",
@@ -15,7 +16,6 @@ const firebaseConfig = {
   measurementId: "G-3BP7ZNRD9M"
 };
 
-// ── Razorpay Key (Test Mode) ──
 const RAZORPAY_KEY = "rzp_test_SokQ6RRs3wd0oH";
 
 let db = null;
@@ -24,12 +24,12 @@ let firebaseReady = false;
 async function initFirebase() {
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-    const { getFirestore, collection, addDoc, getDocs, query, orderBy, where, serverTimestamp } =
+    const { getFirestore, collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     firebaseReady = true;
-    window._fs = { collection, addDoc, getDocs, query, orderBy, where, serverTimestamp };
+    window._fs = { collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp };
     console.log("✅ Firebase connected");
     document.dispatchEvent(new Event("firebase-ready"));
   } catch (e) {
@@ -38,19 +38,25 @@ async function initFirebase() {
 }
 initFirebase();
 
-// ── Save booking to Firestore ──
+// ── Firebase helpers ──
 async function saveBooking(data) {
   if (!firebaseReady) return null;
   const { collection, addDoc, serverTimestamp } = window._fs;
   try {
-    const ref = await addDoc(collection(db, "bookings"), {
-      ...data, createdAt: serverTimestamp()
-    });
+    const ref = await addDoc(collection(db, "bookings"), { ...data, createdAt: serverTimestamp() });
     return ref.id;
-  } catch (e) { console.error("saveBooking error:", e); return null; }
+  } catch (e) { console.error("saveBooking:", e); return null; }
 }
 
-// ── Load bookings ──
+async function saveFeedback(data) {
+  if (!firebaseReady) return null;
+  const { collection, addDoc, serverTimestamp } = window._fs;
+  try {
+    const ref = await addDoc(collection(db, "reviews"), { ...data, createdAt: serverTimestamp() });
+    return ref.id;
+  } catch (e) { console.error("saveFeedback:", e); return null; }
+}
+
 async function loadBookings(filterDate) {
   if (!firebaseReady) return [];
   const { collection, getDocs, query, orderBy, where } = window._fs;
@@ -60,35 +66,36 @@ async function loadBookings(filterDate) {
       : query(collection(db, "bookings"), orderBy("createdAt", "desc"));
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (e) { console.error("loadBookings error:", e); return []; }
+  } catch (e) { console.error("loadBookings:", e); return []; }
 }
 
-// ── Get booked slots (single field query — no index needed) ──
+async function loadReviews() {
+  if (!firebaseReady) return [];
+  const { collection, getDocs, query, orderBy } = window._fs;
+  try {
+    const q = query(collection(db, "reviews"), orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { console.error("loadReviews:", e); return []; }
+}
+
 async function getBookedSlots(doctorName, dateKey) {
   if (!firebaseReady) return [];
   const { collection, getDocs, query, where } = window._fs;
   try {
-    const q = query(
-      collection(db, "bookings"),
-      where("doctorDate", "==", doctorName + "_" + dateKey)
-    );
+    const q = query(collection(db, "bookings"), where("doctorDate", "==", doctorName + "_" + dateKey));
     const snap = await getDocs(q);
-    return snap.docs
-      .map(d => d.data())
-      .filter(b => b.status !== "cancelled")
-      .map(b => b.slot);
-  } catch (e) { console.error("getBookedSlots error:", e); return []; }
+    return snap.docs.map(d => d.data()).filter(b => b.status !== "cancelled").map(b => b.slot);
+  } catch (e) { console.error("getBookedSlots:", e); return []; }
 }
 
-// ── Update booking status ──
 async function updateBookingStatus(id, status) {
   if (!firebaseReady) return;
-  const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+  const { doc, updateDoc } = window._fs;
   try { await updateDoc(doc(db, "bookings", id), { status }); }
-  catch (e) { console.error("updateBookingStatus error:", e); }
+  catch (e) { console.error("updateStatus:", e); }
 }
 
-// ── Load Razorpay script dynamically ──
 function loadRazorpay() {
   return new Promise(resolve => {
     if (window.Razorpay) { resolve(true); return; }
@@ -127,36 +134,187 @@ function loadRazorpay() {
 function getParam(k) { return new URLSearchParams(window.location.search).get(k); }
 
 /* ═══════════════════════════════════
+   HOME PAGE — Live Reviews
+═══════════════════════════════════ */
+if (document.getElementById("liveReviewsGrid")) {
+  document.addEventListener("firebase-ready", loadLiveReviews);
+
+  async function loadLiveReviews() {
+    const grid = document.getElementById("liveReviewsGrid");
+    const reviews = await loadReviews();
+
+    if (reviews.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:32px 16px;color:var(--navy-m)">
+          <div style="font-size:40px;margin-bottom:12px">💬</div>
+          <div style="font-size:16px;font-weight:600;margin-bottom:6px">No reviews yet</div>
+          <div style="font-size:14px">Be the first to share your experience after your appointment!</div>
+        </div>`;
+      return;
+    }
+
+    const stars = r => "★".repeat(r) + "☆".repeat(5 - r);
+
+    grid.innerHTML = reviews.slice(0, 6).map(r => `
+      <div class="review-card">
+        <div class="review-stars" style="color:#F59E0B;font-size:18px;margin-bottom:10px">${stars(r.rating || 5)}</div>
+        <p class="review-text" style="font-size:15px;color:var(--navy-m);line-height:1.7;margin-bottom:16px;font-style:italic">"${r.comment}"</p>
+        <div class="review-author" style="display:flex;align-items:center;gap:12px">
+          <div class="review-avatar" style="width:40px;height:40px;border-radius:50%;background:var(--teal-l);color:var(--teal-d);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">
+            ${(r.patientName || "P").slice(0,2).toUpperCase()}
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:700;color:var(--navy)">${r.patientName || "Patient"}</div>
+            <div style="font-size:12px;color:var(--navy-m);margin-top:2px">Visited ${r.doctor} · ${r.specialty || ""}</div>
+          </div>
+        </div>
+      </div>`).join("");
+  }
+}
+
+/* ═══════════════════════════════════
    BOOKING PAGE
 ═══════════════════════════════════ */
 if (document.getElementById("docList")) {
 
-  // Inject payment button styles
-  const payStyle = document.createElement("style");
-  payStyle.textContent = `
-    .pay-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
-    .pay-btn {
-      padding: 14px 10px; border-radius: var(--r-lg); border: 2px solid var(--border);
-      font-size: 14px; font-weight: 700; font-family: var(--ff);
-      cursor: pointer; transition: all .18s; text-align: center; line-height: 1.4;
+  // Inject styles for pay option modal + feedback modal
+  const extraStyles = document.createElement("style");
+  extraStyles.textContent = `
+    /* Pay option modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(15,23,42,.55);
+      display: flex; align-items: flex-end; justify-content: center;
+      z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .2s;
     }
-    .pay-btn-online {
-      background: var(--teal); color: white; border-color: var(--teal);
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal-sheet {
+      background: white; border-radius: 24px 24px 0 0; padding: 28px 24px 36px;
+      width: 100%; max-width: 480px;
+      transform: translateY(60px); transition: transform .25s cubic-bezier(.34,1.2,.64,1);
     }
-    .pay-btn-online:hover { background: var(--teal-d); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(13,148,136,.3); }
-    .pay-btn-clinic {
-      background: white; color: var(--navy); border-color: var(--border-md);
+    .modal-overlay.open .modal-sheet { transform: translateY(0); }
+    .modal-handle { width: 40px; height: 4px; background: var(--border-md); border-radius: 2px; margin: 0 auto 20px; }
+    .modal-title { font-family: var(--ff-d); font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+    .modal-sub { font-size: 14px; color: var(--navy-m); margin-bottom: 22px; }
+    .pay-btn-row { display: flex; flex-direction: column; gap: 10px; }
+    .pay-choice {
+      padding: 16px 20px; border-radius: var(--r-lg); border: 2px solid var(--border);
+      font-size: 15px; font-weight: 700; font-family: var(--ff);
+      cursor: pointer; display: flex; align-items: center; gap: 14px; text-align: left;
+      transition: all .18s; background: white;
     }
-    .pay-btn-clinic:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-l); }
-    .pay-btn:active { transform: scale(.98); }
-    .pay-btn small { display: block; font-size: 11px; font-weight: 400; opacity: .8; margin-top: 3px; }
-    .pay-note { font-size: 12px; color: var(--navy-m); text-align: center; margin-top: 8px; }
-  `;
-  document.head.appendChild(payStyle);
+    .pay-choice:hover { border-color: var(--teal); background: var(--teal-l); }
+    .pay-choice-icon { font-size: 28px; flex-shrink: 0; }
+    .pay-choice-text small { display: block; font-size: 12px; font-weight: 400; color: var(--navy-m); margin-top: 3px; }
+    .pay-choice.primary { background: var(--teal); border-color: var(--teal); color: white; }
+    .pay-choice.primary small { color: rgba(255,255,255,.8); }
+    .pay-choice.primary:hover { background: var(--teal-d); }
 
+    /* Feedback modal */
+    .feedback-overlay {
+      position: fixed; inset: 0; background: rgba(15,23,42,.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .2s;
+      padding: 20px;
+    }
+    .feedback-overlay.open { opacity: 1; pointer-events: all; }
+    .feedback-box {
+      background: white; border-radius: 20px; padding: 28px 24px;
+      width: 100%; max-width: 420px;
+      transform: scale(.92); transition: transform .25s cubic-bezier(.34,1.2,.64,1);
+    }
+    .feedback-overlay.open .feedback-box { transform: scale(1); }
+    .fb-title { font-family: var(--ff-d); font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+    .fb-sub { font-size: 14px; color: var(--navy-m); margin-bottom: 20px; }
+    .star-picker { display: flex; gap: 8px; margin-bottom: 16px; }
+    .star-pick { font-size: 32px; cursor: pointer; filter: grayscale(1); transition: filter .15s, transform .15s; }
+    .star-pick.lit { filter: none; }
+    .star-pick:hover { transform: scale(1.15); }
+    .fb-textarea { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-md); border-radius: var(--r); font-size: 14px; font-family: var(--ff); color: var(--navy); background: var(--bg); outline: none; resize: vertical; min-height: 80px; margin-bottom: 14px; transition: border-color .15s; }
+    .fb-textarea:focus { border-color: var(--teal); }
+    .fb-submit { width: 100%; background: var(--teal); color: white; border: none; border-radius: var(--r-lg); padding: 13px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: var(--ff); transition: all .18s; }
+    .fb-submit:hover { background: var(--teal-d); }
+    .fb-skip { width: 100%; background: none; border: none; color: var(--navy-m); font-size: 13px; font-family: var(--ff); cursor: pointer; margin-top: 10px; text-decoration: underline; }
+  `;
+  document.head.appendChild(extraStyles);
+
+  // ── Pay option modal HTML ──
+  const payModal = document.createElement("div");
+  payModal.className = "modal-overlay";
+  payModal.id = "payModal";
+  payModal.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">Choose Payment Method</div>
+      <div class="modal-sub" id="payModalSub">Appointment with Dr. — on —</div>
+      <div class="pay-btn-row">
+        <button class="pay-choice primary" onclick="processPayment('online')">
+          <span class="pay-choice-icon">💳</span>
+          <span class="pay-choice-text">
+            Pay Online Now
+            <small>Secure payment · Instant confirmation · Razorpay</small>
+          </span>
+        </button>
+        <button class="pay-choice" onclick="processPayment('clinic')">
+          <span class="pay-choice-icon">🏥</span>
+          <span class="pay-choice-text">
+            Pay at Clinic
+            <small>Cash or card on arrival · Slot reserved for you</small>
+          </span>
+        </button>
+      </div>
+      <div style="margin-top:14px;font-size:12px;color:var(--navy-m);text-align:center">🔒 Payments processed securely by Razorpay</div>
+      <button onclick="closePayModal()" style="width:100%;background:none;border:none;color:var(--navy-m);font-size:13px;font-family:var(--ff);cursor:pointer;margin-top:12px;text-decoration:underline">Cancel</button>
+    </div>`;
+  document.body.appendChild(payModal);
+
+  // ── Feedback modal HTML ──
+  const fbModal = document.createElement("div");
+  fbModal.className = "feedback-overlay";
+  fbModal.id = "fbModal";
+  fbModal.innerHTML = `
+    <div class="feedback-box">
+      <div style="font-size:36px;text-align:center;margin-bottom:12px">🌟</div>
+      <div class="fb-title" style="text-align:center">How was your visit?</div>
+      <div class="fb-sub" style="text-align:center" id="fbModalSub">Share your experience with Dr. —</div>
+      <div class="star-picker" id="starPicker">
+        <span class="star-pick" data-val="1" onclick="pickStar(1)">⭐</span>
+        <span class="star-pick" data-val="2" onclick="pickStar(2)">⭐</span>
+        <span class="star-pick" data-val="3" onclick="pickStar(3)">⭐</span>
+        <span class="star-pick" data-val="4" onclick="pickStar(4)">⭐</span>
+        <span class="star-pick" data-val="5" onclick="pickStar(5)">⭐</span>
+      </div>
+      <textarea class="fb-textarea" id="fbComment" placeholder="Tell us about your experience (optional)..."></textarea>
+      <button class="fb-submit" onclick="submitFeedback()">Submit Review</button>
+      <button class="fb-skip" onclick="closeFbModal()">Skip for now</button>
+    </div>`;
+  document.body.appendChild(fbModal);
+
+  // Pay modal state
+  let pendingBookingData = null;
+  let selectedRating = 5;
+  let completedBookingForFeedback = null;
+
+  window.closePayModal = function () {
+    document.getElementById("payModal").classList.remove("open");
+  };
+  window.closeFbModal = function () {
+    document.getElementById("fbModal").classList.remove("open");
+  };
+
+  // Star picker
+  window.pickStar = function (val) {
+    selectedRating = val;
+    document.querySelectorAll(".star-pick").forEach(s => {
+      s.classList.toggle("lit", parseInt(s.dataset.val) <= val);
+    });
+  };
+  // Pre-light 5 stars
+  setTimeout(() => pickStar(5), 100);
+
+  // Specialty filter
   const specParam = getParam("spec");
   const docParam  = getParam("doc");
-
   if (specParam) {
     const btn = Array.from(document.querySelectorAll(".sf-btn")).find(b => b.textContent.includes(specParam));
     if (btn) btn.click();
@@ -181,63 +339,25 @@ if (document.getElementById("docList")) {
   let selectedDoc     = null;
   let selectedSlot    = null;
   let selectedDateIdx = 0;
-  let pendingBookingData = null; // holds form data while payment is processing
 
-  window.selectDoc = function (cardEl, name, avatar, spec, fee, cred, rating) {
-    selectedDoc = { name, avatar, spec, fee, cred, rating };
+  window.selectDoc = function (cardEl, name, avatar, spec, fee, cred) {
+    selectedDoc = { name, avatar, spec, fee, cred };
     document.getElementById("doctorListView").style.display = "none";
     document.getElementById("bookingPanel").style.display   = "block";
     document.getElementById("successView").classList.remove("show");
     document.getElementById("bpAvatar").textContent = avatar;
     document.getElementById("bpName").textContent   = name;
-    document.getElementById("bpSpec").textContent   = `${spec} · ₹${fee} · ★ ${rating}`;
-    selectedSlot = null;
-    selectedDateIdx = 0;
-    buildDatePicker();
-    buildTimeSlots();
-    updateSummaryPanel();
-    // Replace confirm button with pay options
-    renderPayButtons();
+    document.getElementById("bpSpec").textContent   = `${spec} · ₹${fee}`;
+    selectedSlot = null; selectedDateIdx = 0;
+    buildDatePicker(); buildTimeSlots(); updateSummaryPanel();
     document.getElementById("bookingPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   };
-
-  // ── Render Pay Online + Pay at Clinic buttons ──
-  function renderPayButtons() {
-    const confirmBtn = document.getElementById("confirmBtn");
-    if (!confirmBtn) return;
-    confirmBtn.style.display = "none"; // hide original button
-
-    // Remove existing pay options if any
-    const existing = document.getElementById("payOptionsWrap");
-    if (existing) existing.remove();
-
-    const wrap = document.createElement("div");
-    wrap.id = "payOptionsWrap";
-    wrap.innerHTML = `
-      <div class="pay-options">
-        <button class="pay-btn pay-btn-online" onclick="handlePayment('online')">
-          💳 Pay Online
-          <small>Secure · Instant confirm</small>
-        </button>
-        <button class="pay-btn pay-btn-clinic" onclick="handlePayment('clinic')">
-          🏥 Pay at Clinic
-          <small>Cash / Card on arrival</small>
-        </button>
-      </div>
-      <div class="pay-note">🔒 Online payments secured by Razorpay</div>
-    `;
-    confirmBtn.parentNode.insertBefore(wrap, confirmBtn.nextSibling);
-  }
 
   window.backToList = function () {
     document.getElementById("doctorListView").style.display = "block";
     document.getElementById("bookingPanel").style.display   = "none";
     document.getElementById("successView").classList.remove("show");
     selectedDoc = null;
-    const existing = document.getElementById("payOptionsWrap");
-    if (existing) existing.remove();
-    const confirmBtn = document.getElementById("confirmBtn");
-    if (confirmBtn) confirmBtn.style.display = "block";
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
 
@@ -246,8 +366,7 @@ if (document.getElementById("docList")) {
   const MONTH_LONG = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   function getSelectedDateKey() {
-    const d = new Date();
-    d.setDate(d.getDate() + selectedDateIdx);
+    const d = new Date(); d.setDate(d.getDate() + selectedDateIdx);
     return d.toISOString().split("T")[0];
   }
 
@@ -262,31 +381,22 @@ if (document.getElementById("docList")) {
       chip.className = "date-chip" + (i === selectedDateIdx ? " selected" : "");
       chip.innerHTML = `<span class="dc-day">${DAYS[d.getDay()]}</span><span class="dc-num">${d.getDate()}</span>`;
       chip.addEventListener("click", () => {
-        selectedDateIdx = i;
-        selectedSlot = null;
-        buildDatePicker();
-        buildTimeSlots();
-        updateSummaryPanel();
+        selectedDateIdx = i; selectedSlot = null;
+        buildDatePicker(); buildTimeSlots(); updateSummaryPanel();
       });
       scroller.appendChild(chip);
     }
   }
 
-  const ALL_SLOTS = [
-    "9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
-    "12:00 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM"
-  ];
+  const ALL_SLOTS = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
+                     "12:00 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM"];
 
   async function buildTimeSlots() {
     const grid = document.getElementById("timeGrid");
     if (!grid) return;
     grid.innerHTML = `<div style="grid-column:1/-1;padding:14px;text-align:center;font-size:13px;color:var(--navy-m)">⏳ Checking available slots...</div>`;
-
     let bookedSlots = [];
-    if (selectedDoc) {
-      bookedSlots = await getBookedSlots(selectedDoc.name, getSelectedDateKey());
-    }
-
+    if (selectedDoc) bookedSlots = await getBookedSlots(selectedDoc.name, getSelectedDateKey());
     grid.innerHTML = "";
     ALL_SLOTS.forEach(slot => {
       const isBooked = bookedSlots.includes(slot);
@@ -294,7 +404,7 @@ if (document.getElementById("docList")) {
       btn.className = "time-slot" + (isBooked ? " booked" : slot === selectedSlot ? " selected" : "");
       btn.textContent = isBooked ? slot + " ✕" : slot;
       btn.disabled = isBooked;
-      btn.title = isBooked ? "Already booked" : "Click to select";
+      btn.title = isBooked ? "Already booked" : "Select this slot";
       if (!isBooked) {
         btn.addEventListener("click", () => {
           selectedSlot = slot;
@@ -328,8 +438,8 @@ if (document.getElementById("docList")) {
     }
   }
 
-  // ── Validate form and build booking data ──
-  async function buildAndValidate() {
+  // ── Validate form ──
+  async function validateAndBuild() {
     const name   = document.getElementById("pName")?.value.trim();
     const phone  = document.getElementById("pPhone")?.value.trim();
     const age    = document.getElementById("pAge")?.value.trim();
@@ -345,83 +455,74 @@ if (document.getElementById("docList")) {
     const dateKey = getSelectedDateKey();
     const token   = "#" + String(Math.floor(Math.random() * 900) + 100);
 
-    // Check slot still free
+    // Check slot still available
     const stillBooked = await getBookedSlots(selectedDoc.name, dateKey);
     if (stillBooked.includes(selectedSlot)) {
-      alert("⚠️ This slot was just taken! Please pick another slot.");
-      selectedSlot = null;
-      buildTimeSlots();
-      return null;
+      alert("⚠️ This slot was just taken! Please pick another.");
+      selectedSlot = null; buildTimeSlots(); return null;
     }
 
     return { name, phone, age, gender, reason, dateStr, dateKey, token };
   }
 
-  // ── Handle payment choice ──
-  window.handlePayment = async function (method) {
-    const formData = await buildAndValidate();
+  // ── Confirm button → open pay modal ──
+  window.confirmBooking = async function () {
+    const formData = await validateAndBuild();
     if (!formData) return;
+    pendingBookingData = formData;
 
-    if (method === "clinic") {
-      // Pay at clinic — save directly with status confirmed
-      await finalizeBooking(formData, "confirmed", "pay_at_clinic", null);
+    // Show pay modal
+    document.getElementById("payModalSub").textContent =
+      `${selectedDoc.name} · ${formData.dateStr} · ${selectedSlot} · ₹${selectedDoc.fee}`;
+    document.getElementById("payModal").classList.add("open");
+  };
+
+  // ── Process payment choice ──
+  window.processPayment = async function (method) {
+    closePayModal();
+    if (method === "online") {
+      await openRazorpay(pendingBookingData);
     } else {
-      // Pay online — open Razorpay
-      await openRazorpay(formData);
+      await finalizeBooking(pendingBookingData, "confirmed", "pay_at_clinic", null);
     }
   };
 
-  // ── Open Razorpay checkout ──
+  // ── Razorpay checkout ──
   async function openRazorpay(formData) {
     const loaded = await loadRazorpay();
     if (!loaded) {
-      alert("Payment gateway failed to load. Please try 'Pay at Clinic' instead.");
+      alert("Payment gateway failed to load. Please choose 'Pay at Clinic'.");
+      document.getElementById("payModal").classList.add("open");
       return;
     }
 
-    const amountPaisa = parseInt(selectedDoc.fee) * 100; // Razorpay takes paise
-
     const options = {
       key: RAZORPAY_KEY,
-      amount: amountPaisa,
+      amount: parseInt(selectedDoc.fee) * 100,
       currency: "INR",
-      name: "HealthFirst Clinic",
-      description: `Appointment with ${selectedDoc.name} on ${formData.dateStr} at ${selectedSlot}`,
+      name: "HealthFirst",
+      description: `${selectedDoc.name} · ${formData.dateStr} · ${selectedSlot}`,
       image: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏥</text></svg>",
-      prefill: {
-        name:    formData.name,
-        contact: formData.phone
-      },
-      notes: {
-        doctor:  selectedDoc.name,
-        date:    formData.dateStr,
-        slot:    selectedSlot,
-        token:   formData.token
-      },
+      prefill: { name: formData.name, contact: formData.phone },
+      notes: { doctor: selectedDoc.name, date: formData.dateStr, slot: selectedSlot, token: formData.token },
       theme: { color: "#0D9488" },
-
       handler: async function (response) {
-        // Payment successful — save to Firebase with payment details
-        await finalizeBooking(
-          formData,
-          "confirmed",
-          "paid_online",
-          {
-            razorpay_payment_id: response.razorpay_payment_id,
-            amount: selectedDoc.fee
-          }
-        );
+        await finalizeBooking(formData, "confirmed", "paid_online", {
+          razorpay_payment_id: response.razorpay_payment_id,
+          amount: selectedDoc.fee
+        });
       }
     };
 
     const rzp = new window.Razorpay(options);
-    rzp.on("payment.failed", function (response) {
-      alert("❌ Payment failed: " + response.error.description + "\n\nYou can still book by choosing 'Pay at Clinic'.");
+    rzp.on("payment.failed", function (r) {
+      alert("❌ Payment failed: " + r.error.description + "\n\nYou can still book by choosing 'Pay at Clinic'.");
+      document.getElementById("payModal").classList.add("open");
     });
     rzp.open();
   }
 
-  // ── Save booking to Firebase and show success ──
+  // ── Save booking + show success ──
   async function finalizeBooking(formData, status, paymentMethod, paymentDetails) {
     const savedId = await saveBooking({
       patientName:    formData.name,
@@ -437,18 +538,22 @@ if (document.getElementById("docList")) {
       slot:           selectedSlot,
       token:          formData.token,
       doctorDate:     selectedDoc.name + "_" + formData.dateKey,
-      status:         status,
-      paymentMethod:  paymentMethod,
+      status,
+      paymentMethod,
       paymentDetails: paymentDetails || {}
     });
 
+    // Store for feedback
+    completedBookingForFeedback = {
+      bookingId: savedId,
+      patientName: formData.name,
+      doctor: selectedDoc.name,
+      specialty: selectedDoc.spec
+    };
+
     const isPaid = paymentMethod === "paid_online";
 
-    // Show success screen
     document.getElementById("bookingPanel").style.display = "none";
-    const existing = document.getElementById("payOptionsWrap");
-    if (existing) existing.remove();
-
     const sv = document.getElementById("successView");
     sv.classList.add("show");
     document.getElementById("tokenNum").textContent = formData.token;
@@ -456,15 +561,14 @@ if (document.getElementById("docList")) {
       <strong>${formData.name}</strong>, your appointment with
       <strong>${selectedDoc.name}</strong> (${selectedDoc.spec}) is confirmed.<br><br>
       📅 <strong>${formData.dateStr}</strong> at <strong>${selectedSlot}</strong><br>
-      💰 Consultation fee: <strong>₹${selectedDoc.fee}</strong><br>
+      💰 Fee: <strong>₹${selectedDoc.fee}</strong> —
       ${isPaid
-        ? `✅ <strong>Payment received online</strong>${paymentDetails?.razorpay_payment_id ? ` · ID: ${paymentDetails.razorpay_payment_id}` : ""}`
-        : `🏥 <strong>Pay at clinic</strong> on arrival`
+        ? `<span style="color:var(--green);font-weight:600">✅ Paid online${paymentDetails?.razorpay_payment_id ? ` · ${paymentDetails.razorpay_payment_id}` : ""}</span>`
+        : `<span style="color:var(--amber);font-weight:600">🏥 Pay at clinic on arrival</span>`
       }<br><br>
       📲 Confirmation sent to <strong>${formData.phone}</strong><br>
       ⏰ Please arrive 10 minutes before your slot.<br>
-      🆔 Bring any previous prescriptions or reports.<br><br>
-      ${savedId ? `<span style="color:var(--green);font-size:12px">✅ Booking ID: ${savedId.slice(0,8)}...</span>` : ""}
+      🆔 Bring any previous prescriptions or reports.
     `;
     sv.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -472,10 +576,6 @@ if (document.getElementById("docList")) {
   window.bookAnother = function () {
     document.getElementById("successView").classList.remove("show");
     document.getElementById("doctorListView").style.display = "block";
-    const existing = document.getElementById("payOptionsWrap");
-    if (existing) existing.remove();
-    const confirmBtn = document.getElementById("confirmBtn");
-    if (confirmBtn) confirmBtn.style.display = "block";
     selectedDoc = null; selectedDateIdx = 0; selectedSlot = null;
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
@@ -483,10 +583,30 @@ if (document.getElementById("docList")) {
   document.addEventListener("firebase-ready", () => {
     if (selectedDoc) buildTimeSlots();
   });
+
+  // ── Feedback submission ──
+  window.submitFeedback = async function () {
+    if (!completedBookingForFeedback) { closeFbModal(); return; }
+    const comment = document.getElementById("fbComment")?.value.trim();
+    if (!comment && selectedRating === 5) {
+      // Allow empty comment with 5 stars
+    }
+    await saveFeedback({
+      bookingId:   completedBookingForFeedback.bookingId,
+      patientName: completedBookingForFeedback.patientName,
+      doctor:      completedBookingForFeedback.doctor,
+      specialty:   completedBookingForFeedback.specialty,
+      rating:      selectedRating,
+      comment:     comment || "Great experience!"
+    });
+    closeFbModal();
+    alert("✅ Thank you for your feedback! It helps other patients choose the right doctor.");
+  };
 }
 
 /* ═══════════════════════════════════
    DOCTOR DASHBOARD
+   — Mark Done → triggers feedback SMS link
 ═══════════════════════════════════ */
 if (document.getElementById("queue-upcoming")) {
   document.addEventListener("firebase-ready", loadTodayQueue);
@@ -510,18 +630,15 @@ if (document.getElementById("queue-upcoming")) {
             <div class="ai-name">${b.patientName} · ${b.gender || ""}, ${b.age || ""}</div>
             <div class="ai-detail">
               ${b.slot} · ${b.reason || "General consultation"} · Token ${b.token}
-              &nbsp;·&nbsp;
-              <span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${
+              &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${
                 b.paymentMethod === "paid_online"
                   ? "background:#ECFDF5;color:#065F46"
                   : "background:#FFF3E0;color:#E65100"
-              }">
-                ${b.paymentMethod === "paid_online" ? "✅ Paid Online" : "🏥 Pay at Clinic"}
-              </span>
+              }">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
             </div>
           </div>
           <div class="ai-actions">
-            <button class="ai-btn done" onclick="markDone('${b.id}')">✓ Done</button>
+            <button class="ai-btn done" onclick="markDone('${b.id}','${b.patientName}','${b.phone || ""}')">✓ Done</button>
             <button class="ai-btn cancel" onclick="cancelAppt('${b.id}')">✗ Cancel</button>
           </div>
         </div>`).join("");
@@ -532,10 +649,21 @@ if (document.getElementById("queue-upcoming")) {
     if (kpiEl) kpiEl.textContent = bookings.length;
   }
 
-  window.markDone = async function (id) {
+  // Mark done → send WhatsApp feedback link to patient
+  window.markDone = async function (id, patientName, phone) {
     await updateBookingStatus(id, "done");
     const row = document.getElementById("appt-" + id);
     if (row) row.querySelector(".ai-actions").innerHTML = '<span class="status-badge sb-done">✓ Done</span>';
+
+    // Send WhatsApp feedback link if phone available
+    if (phone && phone.length >= 10) {
+      const feedbackUrl = `${window.location.origin}/book.html?feedback=${id}`;
+      const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today. Please share your feedback: ${feedbackUrl}`);
+      // Open WhatsApp in new tab for doctor to send
+      const waLink = `https://wa.me/91${phone}?text=${msg}`;
+      const sendWA = confirm(`✅ Appointment marked as done!\n\nSend a WhatsApp feedback request to ${patientName}?`);
+      if (sendWA) window.open(waLink, "_blank");
+    }
   };
 
   window.cancelAppt = async function (id) {
@@ -543,6 +671,12 @@ if (document.getElementById("queue-upcoming")) {
     const row = document.getElementById("appt-" + id);
     if (row) { row.style.opacity = "0.5"; row.querySelector(".ai-actions").innerHTML = '<span class="status-badge sb-cancelled">Cancelled</span>'; }
   };
+
+  // Check if patient came via feedback link
+  const fbParam = getParam("feedback");
+  if (fbParam) {
+    document.getElementById("fbModal") && document.getElementById("fbModal").classList.add("open");
+  }
 }
 
 /* ═══════════════════════════════════
@@ -553,6 +687,8 @@ if (document.getElementById("recentBookingsTable")) {
 
   async function loadAdminData() {
     const bookings = await loadBookings();
+    const reviews  = await loadReviews();
+
     const table = document.getElementById("recentBookingsTable");
     if (table) {
       table.innerHTML = bookings.length === 0
@@ -562,13 +698,8 @@ if (document.getElementById("recentBookingsTable")) {
               <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${(b.patientName||"??").slice(0,2).toUpperCase()}</div>
               <div class="ai-info">
                 <div class="ai-name">${b.patientName} → ${b.doctor}</div>
-                <div class="ai-detail">
-                  ${b.specialty} · ${b.dateDisplay} · ${b.slot} · ₹${b.fee} · Token ${b.token}
-                  &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${
-                    b.paymentMethod === "paid_online"
-                      ? "background:#ECFDF5;color:#065F46"
-                      : "background:#FFF3E0;color:#E65100"
-                  }">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
+                <div class="ai-detail">${b.specialty} · ${b.dateDisplay} · ${b.slot} · ₹${b.fee} · Token ${b.token}
+                  &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod==="paid_online"?"background:#ECFDF5;color:#065F46":"background:#FFF3E0;color:#E65100"}">${b.paymentMethod==="paid_online"?"✅ Paid":"🏥 Clinic"}</span>
                 </div>
               </div>
               <span class="status-badge ${b.status==="done"?"sb-done":b.status==="cancelled"?"sb-cancelled":"sb-waiting"}">${b.status}</span>
@@ -580,18 +711,14 @@ if (document.getElementById("recentBookingsTable")) {
       const d = new Date(b.date); const now = new Date();
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
-
-    // Only count online payments in revenue (clinic payments not yet collected)
-    const onlineRevenue = thisMonth
-      .filter(b => b.paymentMethod === "paid_online")
-      .reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
-    const totalRevenue = thisMonth
-      .reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const onlineRevenue = thisMonth.filter(b => b.paymentMethod === "paid_online").reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 5), 0) / reviews.length).toFixed(1) : "—";
 
     const el = id => document.getElementById(id);
     if (el("adminTotalBookings")) el("adminTotalBookings").textContent = thisMonth.length;
-    if (el("adminRevenue"))       el("adminRevenue").textContent = "₹" + onlineRevenue.toLocaleString("hi-IN") + " collected";
+    if (el("adminRevenue"))       el("adminRevenue").textContent = "₹" + onlineRevenue.toLocaleString("hi-IN");
     if (el("adminTotalAll"))      el("adminTotalAll").textContent = bookings.length;
+    if (el("adminAvgRating"))     el("adminAvgRating").textContent = avgRating + " ★ (" + reviews.length + " reviews)";
   }
 }
 
