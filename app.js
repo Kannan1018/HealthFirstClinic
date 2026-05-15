@@ -20,12 +20,22 @@ const firebaseConfig = {
 const RAZORPAY_KEY = "rzp_test_SokQ6RRs3wd0oH";
 
 /* ─────────────────────────────────────────────
-   🔐 ADMIN EMAIL — change this to YOUR email
-   Then create this same account in:
+   🔐 ADMIN EMAIL — this is YOUR email
+   You created this account in:
    Firebase Console → Authentication → Users
    See SECURITY-SETUP.md for full instructions.
 ───────────────────────────────────────────── */
 const ADMIN_EMAIL = "kannan.ag10@gmail.com";
+
+/* Normalize emails for comparison: strips invisible characters, normalizes unicode, lowercases, trims */
+function normEmail(s) {
+  if (!s) return "";
+  return String(s)
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "") // zero-width spaces, BOM, non-breaking space
+    .trim()
+    .toLowerCase();
+}
 
 /* ─── Specialty catalog ─── */
 const SPECIALTIES = [
@@ -143,8 +153,8 @@ async function handleAuthStateChange(user) {
 
   // Admin gate
   if (requireWhat === "admin") {
-    const userEmail = (user.email || "").trim().toLowerCase();
-    const adminEmail = (ADMIN_EMAIL || "").trim().toLowerCase();
+    const userEmail = normEmail(user.email);
+    const adminEmail = normEmail(ADMIN_EMAIL);
     if (userEmail === adminEmail) {
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email;
@@ -152,8 +162,8 @@ async function handleAuthStateChange(user) {
       document.dispatchEvent(new Event("admin-ready"));
     } else {
       console.error("❌ Admin email mismatch:");
-      console.error("   Signed-in email:", JSON.stringify(user.email));
-      console.error("   ADMIN_EMAIL in app.js:", JSON.stringify(ADMIN_EMAIL));
+      console.error("   Signed-in email:", JSON.stringify(user.email), "→ normalized:", JSON.stringify(userEmail));
+      console.error("   ADMIN_EMAIL in app.js:", JSON.stringify(ADMIN_EMAIL), "→ normalized:", JSON.stringify(adminEmail));
       if (errEl) errEl.textContent = "This account doesn't have admin access. Open browser console (F12) to see what's mismatched.";
       window._auth.signOut(window._auth.auth);
     }
@@ -162,8 +172,8 @@ async function handleAuthStateChange(user) {
 
   // Doctor gate (allows admin too)
   if (requireWhat === "doctor") {
-    const userEmail = (user.email || "").trim().toLowerCase();
-    const adminEmail = (ADMIN_EMAIL || "").trim().toLowerCase();
+    const userEmail = normEmail(user.email);
+    const adminEmail = normEmail(ADMIN_EMAIL);
     if (userEmail === adminEmail) {
       window._currentDoctor = { email: user.email, name: "Admin", specialty: "All Doctors", avatar: "🛡️" };
       const emailEl = document.getElementById("authedEmail");
