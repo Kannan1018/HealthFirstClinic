@@ -1,9 +1,10 @@
 /* ═══════════════════════════════════════════════
    HealthFirst Clinic — app.js
-   FIXED: Real-time slot availability from Firebase
-   No composite index required
+   Firebase + Razorpay Payment Integration
+   Pay Online OR Pay at Clinic — both supported
 ═══════════════════════════════════════════════ */
 
+// ── Firebase Config ──
 const firebaseConfig = {
   apiKey: "AIzaSyBMHgnM0ThjDeOMmZAHuKOVjF14miU9Sgc",
   authDomain: "healthfirst-f218f.firebaseapp.com",
@@ -13,6 +14,9 @@ const firebaseConfig = {
   appId: "1:98906953435:web:64f4a9bb718bf93b795efe",
   measurementId: "G-3BP7ZNRD9M"
 };
+
+// ── Razorpay Key (Test Mode) ──
+const RAZORPAY_KEY = "rzp_test_SokQ6RRs3wd0oH";
 
 let db = null;
 let firebaseReady = false;
@@ -34,13 +38,13 @@ async function initFirebase() {
 }
 initFirebase();
 
-// ── Save booking ──
+// ── Save booking to Firestore ──
 async function saveBooking(data) {
   if (!firebaseReady) return null;
   const { collection, addDoc, serverTimestamp } = window._fs;
   try {
     const ref = await addDoc(collection(db, "bookings"), {
-      ...data, status: "confirmed", createdAt: serverTimestamp()
+      ...data, createdAt: serverTimestamp()
     });
     return ref.id;
   } catch (e) { console.error("saveBooking error:", e); return null; }
@@ -59,8 +63,7 @@ async function loadBookings(filterDate) {
   } catch (e) { console.error("loadBookings error:", e); return []; }
 }
 
-// ── Get booked slots for a doctor on a date ──
-// Uses single "doctorDate" field — no composite index needed
+// ── Get booked slots (single field query — no index needed) ──
 async function getBookedSlots(doctorName, dateKey) {
   if (!firebaseReady) return [];
   const { collection, getDocs, query, where } = window._fs;
@@ -83,6 +86,18 @@ async function updateBookingStatus(id, status) {
   const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
   try { await updateDoc(doc(db, "bookings", id), { status }); }
   catch (e) { console.error("updateBookingStatus error:", e); }
+}
+
+// ── Load Razorpay script dynamically ──
+function loadRazorpay() {
+  return new Promise(resolve => {
+    if (window.Razorpay) { resolve(true); return; }
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
 }
 
 // ── NAV ──
@@ -116,6 +131,29 @@ function getParam(k) { return new URLSearchParams(window.location.search).get(k)
 ═══════════════════════════════════ */
 if (document.getElementById("docList")) {
 
+  // Inject payment button styles
+  const payStyle = document.createElement("style");
+  payStyle.textContent = `
+    .pay-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+    .pay-btn {
+      padding: 14px 10px; border-radius: var(--r-lg); border: 2px solid var(--border);
+      font-size: 14px; font-weight: 700; font-family: var(--ff);
+      cursor: pointer; transition: all .18s; text-align: center; line-height: 1.4;
+    }
+    .pay-btn-online {
+      background: var(--teal); color: white; border-color: var(--teal);
+    }
+    .pay-btn-online:hover { background: var(--teal-d); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(13,148,136,.3); }
+    .pay-btn-clinic {
+      background: white; color: var(--navy); border-color: var(--border-md);
+    }
+    .pay-btn-clinic:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-l); }
+    .pay-btn:active { transform: scale(.98); }
+    .pay-btn small { display: block; font-size: 11px; font-weight: 400; opacity: .8; margin-top: 3px; }
+    .pay-note { font-size: 12px; color: var(--navy-m); text-align: center; margin-top: 8px; }
+  `;
+  document.head.appendChild(payStyle);
+
   const specParam = getParam("spec");
   const docParam  = getParam("doc");
 
@@ -140,9 +178,10 @@ if (document.getElementById("docList")) {
     });
   };
 
-  let selectedDoc  = null;
-  let selectedSlot = null;
+  let selectedDoc     = null;
+  let selectedSlot    = null;
   let selectedDateIdx = 0;
+  let pendingBookingData = null; // holds form data while payment is processing
 
   window.selectDoc = function (cardEl, name, avatar, spec, fee, cred, rating) {
     selectedDoc = { name, avatar, spec, fee, cred, rating };
@@ -157,14 +196,48 @@ if (document.getElementById("docList")) {
     buildDatePicker();
     buildTimeSlots();
     updateSummaryPanel();
+    // Replace confirm button with pay options
+    renderPayButtons();
     document.getElementById("bookingPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  // ── Render Pay Online + Pay at Clinic buttons ──
+  function renderPayButtons() {
+    const confirmBtn = document.getElementById("confirmBtn");
+    if (!confirmBtn) return;
+    confirmBtn.style.display = "none"; // hide original button
+
+    // Remove existing pay options if any
+    const existing = document.getElementById("payOptionsWrap");
+    if (existing) existing.remove();
+
+    const wrap = document.createElement("div");
+    wrap.id = "payOptionsWrap";
+    wrap.innerHTML = `
+      <div class="pay-options">
+        <button class="pay-btn pay-btn-online" onclick="handlePayment('online')">
+          💳 Pay Online
+          <small>Secure · Instant confirm</small>
+        </button>
+        <button class="pay-btn pay-btn-clinic" onclick="handlePayment('clinic')">
+          🏥 Pay at Clinic
+          <small>Cash / Card on arrival</small>
+        </button>
+      </div>
+      <div class="pay-note">🔒 Online payments secured by Razorpay</div>
+    `;
+    confirmBtn.parentNode.insertBefore(wrap, confirmBtn.nextSibling);
+  }
 
   window.backToList = function () {
     document.getElementById("doctorListView").style.display = "block";
     document.getElementById("bookingPanel").style.display   = "none";
     document.getElementById("successView").classList.remove("show");
     selectedDoc = null;
+    const existing = document.getElementById("payOptionsWrap");
+    if (existing) existing.remove();
+    const confirmBtn = document.getElementById("confirmBtn");
+    if (confirmBtn) confirmBtn.style.display = "block";
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
 
@@ -207,13 +280,11 @@ if (document.getElementById("docList")) {
   async function buildTimeSlots() {
     const grid = document.getElementById("timeGrid");
     if (!grid) return;
-
     grid.innerHTML = `<div style="grid-column:1/-1;padding:14px;text-align:center;font-size:13px;color:var(--navy-m)">⏳ Checking available slots...</div>`;
 
     let bookedSlots = [];
     if (selectedDoc) {
       bookedSlots = await getBookedSlots(selectedDoc.name, getSelectedDateKey());
-      console.log("Booked slots:", bookedSlots);
     }
 
     grid.innerHTML = "";
@@ -257,73 +328,154 @@ if (document.getElementById("docList")) {
     }
   }
 
-  window.confirmBooking = async function () {
+  // ── Validate form and build booking data ──
+  async function buildAndValidate() {
     const name   = document.getElementById("pName")?.value.trim();
     const phone  = document.getElementById("pPhone")?.value.trim();
     const age    = document.getElementById("pAge")?.value.trim();
     const gender = document.getElementById("pGender")?.value;
     const reason = document.getElementById("pReason")?.value.trim();
 
-    if (!name)                       { alert("Please enter your name.");                    return; }
-    if (!phone || phone.length < 10) { alert("Please enter a valid 10-digit phone number."); return; }
-    if (!selectedSlot)               { alert("Please select a time slot.");                  return; }
-
-    const confirmBtn = document.getElementById("confirmBtn");
-    confirmBtn.textContent = "Saving...";
-    confirmBtn.disabled = true;
+    if (!name)                       { alert("Please enter your name.");                     return null; }
+    if (!phone || phone.length < 10) { alert("Please enter a valid 10-digit phone number."); return null; }
+    if (!selectedSlot)               { alert("Please select a time slot.");                  return null; }
 
     const today = new Date(); const d = new Date(today); d.setDate(today.getDate() + selectedDateIdx);
     const dateStr = `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTH_LONG[d.getMonth()]}`;
     const dateKey = getSelectedDateKey();
     const token   = "#" + String(Math.floor(Math.random() * 900) + 100);
 
-    // Final safety check
+    // Check slot still free
     const stillBooked = await getBookedSlots(selectedDoc.name, dateKey);
     if (stillBooked.includes(selectedSlot)) {
-      alert("⚠️ This slot was just taken by someone else! Please pick another slot.");
-      confirmBtn.textContent = "Confirm Appointment →";
-      confirmBtn.disabled = false;
+      alert("⚠️ This slot was just taken! Please pick another slot.");
       selectedSlot = null;
       buildTimeSlots();
+      return null;
+    }
+
+    return { name, phone, age, gender, reason, dateStr, dateKey, token };
+  }
+
+  // ── Handle payment choice ──
+  window.handlePayment = async function (method) {
+    const formData = await buildAndValidate();
+    if (!formData) return;
+
+    if (method === "clinic") {
+      // Pay at clinic — save directly with status confirmed
+      await finalizeBooking(formData, "confirmed", "pay_at_clinic", null);
+    } else {
+      // Pay online — open Razorpay
+      await openRazorpay(formData);
+    }
+  };
+
+  // ── Open Razorpay checkout ──
+  async function openRazorpay(formData) {
+    const loaded = await loadRazorpay();
+    if (!loaded) {
+      alert("Payment gateway failed to load. Please try 'Pay at Clinic' instead.");
       return;
     }
 
+    const amountPaisa = parseInt(selectedDoc.fee) * 100; // Razorpay takes paise
+
+    const options = {
+      key: RAZORPAY_KEY,
+      amount: amountPaisa,
+      currency: "INR",
+      name: "HealthFirst Clinic",
+      description: `Appointment with ${selectedDoc.name} on ${formData.dateStr} at ${selectedSlot}`,
+      image: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏥</text></svg>",
+      prefill: {
+        name:    formData.name,
+        contact: formData.phone
+      },
+      notes: {
+        doctor:  selectedDoc.name,
+        date:    formData.dateStr,
+        slot:    selectedSlot,
+        token:   formData.token
+      },
+      theme: { color: "#0D9488" },
+
+      handler: async function (response) {
+        // Payment successful — save to Firebase with payment details
+        await finalizeBooking(
+          formData,
+          "confirmed",
+          "paid_online",
+          {
+            razorpay_payment_id: response.razorpay_payment_id,
+            amount: selectedDoc.fee
+          }
+        );
+      }
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.on("payment.failed", function (response) {
+      alert("❌ Payment failed: " + response.error.description + "\n\nYou can still book by choosing 'Pay at Clinic'.");
+    });
+    rzp.open();
+  }
+
+  // ── Save booking to Firebase and show success ──
+  async function finalizeBooking(formData, status, paymentMethod, paymentDetails) {
     const savedId = await saveBooking({
-      patientName:  name,
-      phone, age, gender, reason,
-      doctor:       selectedDoc.name,
-      specialty:    selectedDoc.spec,
-      fee:          selectedDoc.fee,
-      date:         dateKey,
-      dateDisplay:  dateStr,
-      slot:         selectedSlot,
-      token,
-      doctorDate:   selectedDoc.name + "_" + dateKey   // ← combined field for slot lookup
+      patientName:    formData.name,
+      phone:          formData.phone,
+      age:            formData.age,
+      gender:         formData.gender,
+      reason:         formData.reason,
+      doctor:         selectedDoc.name,
+      specialty:      selectedDoc.spec,
+      fee:            selectedDoc.fee,
+      date:           formData.dateKey,
+      dateDisplay:    formData.dateStr,
+      slot:           selectedSlot,
+      token:          formData.token,
+      doctorDate:     selectedDoc.name + "_" + formData.dateKey,
+      status:         status,
+      paymentMethod:  paymentMethod,
+      paymentDetails: paymentDetails || {}
     });
 
-    confirmBtn.textContent = "Confirm Appointment →";
-    confirmBtn.disabled = false;
+    const isPaid = paymentMethod === "paid_online";
 
+    // Show success screen
     document.getElementById("bookingPanel").style.display = "none";
+    const existing = document.getElementById("payOptionsWrap");
+    if (existing) existing.remove();
+
     const sv = document.getElementById("successView");
     sv.classList.add("show");
-    document.getElementById("tokenNum").textContent = token;
+    document.getElementById("tokenNum").textContent = formData.token;
     document.getElementById("successBody").innerHTML = `
-      <strong>${name}</strong>, your appointment with <strong>${selectedDoc.name}</strong>
-      (${selectedDoc.spec}) is confirmed.<br><br>
-      📅 <strong>${dateStr}</strong> at <strong>${selectedSlot}</strong><br>
-      💰 Consultation fee: <strong>₹${selectedDoc.fee}</strong> (pay at clinic)<br><br>
-      📲 Confirmation sent to <strong>${phone}</strong><br>
+      <strong>${formData.name}</strong>, your appointment with
+      <strong>${selectedDoc.name}</strong> (${selectedDoc.spec}) is confirmed.<br><br>
+      📅 <strong>${formData.dateStr}</strong> at <strong>${selectedSlot}</strong><br>
+      💰 Consultation fee: <strong>₹${selectedDoc.fee}</strong><br>
+      ${isPaid
+        ? `✅ <strong>Payment received online</strong>${paymentDetails?.razorpay_payment_id ? ` · ID: ${paymentDetails.razorpay_payment_id}` : ""}`
+        : `🏥 <strong>Pay at clinic</strong> on arrival`
+      }<br><br>
+      📲 Confirmation sent to <strong>${formData.phone}</strong><br>
       ⏰ Please arrive 10 minutes before your slot.<br>
       🆔 Bring any previous prescriptions or reports.<br><br>
       ${savedId ? `<span style="color:var(--green);font-size:12px">✅ Booking ID: ${savedId.slice(0,8)}...</span>` : ""}
     `;
     sv.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  }
 
   window.bookAnother = function () {
     document.getElementById("successView").classList.remove("show");
     document.getElementById("doctorListView").style.display = "block";
+    const existing = document.getElementById("payOptionsWrap");
+    if (existing) existing.remove();
+    const confirmBtn = document.getElementById("confirmBtn");
+    if (confirmBtn) confirmBtn.style.display = "block";
     selectedDoc = null; selectedDateIdx = 0; selectedSlot = null;
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
@@ -356,7 +508,17 @@ if (document.getElementById("queue-upcoming")) {
           <div class="ai-token">${i + 1}</div>
           <div class="ai-info">
             <div class="ai-name">${b.patientName} · ${b.gender || ""}, ${b.age || ""}</div>
-            <div class="ai-detail">${b.slot} · ${b.reason || "General consultation"} · Token ${b.token}</div>
+            <div class="ai-detail">
+              ${b.slot} · ${b.reason || "General consultation"} · Token ${b.token}
+              &nbsp;·&nbsp;
+              <span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${
+                b.paymentMethod === "paid_online"
+                  ? "background:#ECFDF5;color:#065F46"
+                  : "background:#FFF3E0;color:#E65100"
+              }">
+                ${b.paymentMethod === "paid_online" ? "✅ Paid Online" : "🏥 Pay at Clinic"}
+              </span>
+            </div>
           </div>
           <div class="ai-actions">
             <button class="ai-btn done" onclick="markDone('${b.id}')">✓ Done</button>
@@ -400,7 +562,14 @@ if (document.getElementById("recentBookingsTable")) {
               <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${(b.patientName||"??").slice(0,2).toUpperCase()}</div>
               <div class="ai-info">
                 <div class="ai-name">${b.patientName} → ${b.doctor}</div>
-                <div class="ai-detail">${b.specialty} · ${b.dateDisplay} · ${b.slot} · ₹${b.fee} · Token ${b.token}</div>
+                <div class="ai-detail">
+                  ${b.specialty} · ${b.dateDisplay} · ${b.slot} · ₹${b.fee} · Token ${b.token}
+                  &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${
+                    b.paymentMethod === "paid_online"
+                      ? "background:#ECFDF5;color:#065F46"
+                      : "background:#FFF3E0;color:#E65100"
+                  }">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
+                </div>
               </div>
               <span class="status-badge ${b.status==="done"?"sb-done":b.status==="cancelled"?"sb-cancelled":"sb-waiting"}">${b.status}</span>
             </div>`).join("");
@@ -411,10 +580,17 @@ if (document.getElementById("recentBookingsTable")) {
       const d = new Date(b.date); const now = new Date();
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
-    const revenue = thisMonth.reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+
+    // Only count online payments in revenue (clinic payments not yet collected)
+    const onlineRevenue = thisMonth
+      .filter(b => b.paymentMethod === "paid_online")
+      .reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const totalRevenue = thisMonth
+      .reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+
     const el = id => document.getElementById(id);
     if (el("adminTotalBookings")) el("adminTotalBookings").textContent = thisMonth.length;
-    if (el("adminRevenue"))       el("adminRevenue").textContent = "₹" + revenue.toLocaleString("hi-IN");
+    if (el("adminRevenue"))       el("adminRevenue").textContent = "₹" + onlineRevenue.toLocaleString("hi-IN") + " collected";
     if (el("adminTotalAll"))      el("adminTotalAll").textContent = bookings.length;
   }
 }
