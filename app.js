@@ -1,9 +1,10 @@
 /* ═══════════════════════════════════════════════
    HealthFirst — app.js
-   ✅ Live ratings from Firebase
-   ✅ Feedback form after appointment done
-   ✅ Direct Razorpay on Book click (no pay at clinic choice on click — Razorpay opens immediately)
-   ✅ Real-time slot availability
+   ✅ Dynamic doctors loaded from Firebase
+   ✅ Admin can add/remove doctors
+   ✅ Doctor applications via For-Doctors page
+   ✅ Live ratings, feedback, slot availability
+   ✅ Razorpay + Pay-at-clinic options
 ═══════════════════════════════════════════════ */
 
 const firebaseConfig = {
@@ -18,18 +19,33 @@ const firebaseConfig = {
 
 const RAZORPAY_KEY = "rzp_test_SokQ6RRs3wd0oH";
 
+/* ─── Specialty catalog ─── */
+const SPECIALTIES = [
+  { key: "General",      label: "General Medicine", icon: "🩺" },
+  { key: "Cardiology",   label: "Cardiology",       icon: "❤️" },
+  { key: "Pediatrics",   label: "Pediatrics",       icon: "👶" },
+  { key: "Dermatology",  label: "Dermatology",      icon: "🧬" },
+  { key: "Ortho",        label: "Orthopedics",      icon: "🦴" },
+  { key: "Gynecology",   label: "Gynecology",       icon: "🌸" },
+  { key: "ENT",          label: "ENT",              icon: "👂" },
+  { key: "Ophthalmology",label: "Ophthalmology",    icon: "👁️" },
+  { key: "Dental",       label: "Dental",           icon: "🦷" },
+  { key: "Psychiatry",   label: "Psychiatry",       icon: "🧠" },
+  { key: "Other",        label: "Other",            icon: "🏥" }
+];
+
 let db = null;
 let firebaseReady = false;
 
 async function initFirebase() {
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-    const { getFirestore, collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp } =
+    const { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, where, serverTimestamp } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     firebaseReady = true;
-    window._fs = { collection, addDoc, getDocs, updateDoc, doc, query, orderBy, where, serverTimestamp };
+    window._fs = { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, where, serverTimestamp };
     console.log("✅ Firebase connected");
     document.dispatchEvent(new Event("firebase-ready"));
   } catch (e) {
@@ -96,6 +112,52 @@ async function updateBookingStatus(id, status) {
   catch (e) { console.error("updateStatus:", e); }
 }
 
+/* ─── Doctor CRUD ─── */
+async function loadDoctors() {
+  if (!firebaseReady) return [];
+  const { collection, getDocs } = window._fs;
+  try {
+    const snap = await getDocs(collection(db, "doctors"));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.active !== false);
+  } catch (e) { console.error("loadDoctors:", e); return []; }
+}
+
+async function saveDoctor(data) {
+  if (!firebaseReady) return null;
+  const { collection, addDoc, serverTimestamp } = window._fs;
+  try {
+    const ref = await addDoc(collection(db, "doctors"), { ...data, active: true, createdAt: serverTimestamp() });
+    return ref.id;
+  } catch (e) { console.error("saveDoctor:", e); return null; }
+}
+
+async function deleteDoctor(id) {
+  if (!firebaseReady) return;
+  const { doc, deleteDoc } = window._fs;
+  try { await deleteDoc(doc(db, "doctors", id)); }
+  catch (e) { console.error("deleteDoctor:", e); }
+}
+
+/* ─── Doctor applications ─── */
+async function saveDoctorApplication(data) {
+  if (!firebaseReady) return null;
+  const { collection, addDoc, serverTimestamp } = window._fs;
+  try {
+    const ref = await addDoc(collection(db, "doctorApplications"), { ...data, status: "pending", createdAt: serverTimestamp() });
+    return ref.id;
+  } catch (e) { console.error("saveDoctorApplication:", e); return null; }
+}
+
+async function loadDoctorApplications() {
+  if (!firebaseReady) return [];
+  const { collection, getDocs, query, orderBy } = window._fs;
+  try {
+    const q = query(collection(db, "doctorApplications"), orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { console.error("loadDoctorApplications:", e); return []; }
+}
+
 function loadRazorpay() {
   return new Promise(resolve => {
     if (window.Razorpay) { resolve(true); return; }
@@ -127,22 +189,100 @@ function loadRazorpay() {
   const io = new IntersectionObserver(entries => {
     entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("visible"); io.unobserve(e.target); } });
   }, { threshold: 0.08 });
-  document.querySelectorAll(".spec-card,.doc-card,.step-card,.review-card,.doc-list-card,.kpi-card,.big-kpi,.panel")
-    .forEach(t => { t.classList.add("reveal"); io.observe(t); });
+  window._observeReveal = (els) => els.forEach(t => { t.classList.add("reveal"); io.observe(t); });
+  window._observeReveal(document.querySelectorAll(".spec-card,.doc-card,.step-card,.review-card,.doc-list-card,.kpi-card,.big-kpi,.panel,.benefit-card,.pricing-card"));
 })();
 
 function getParam(k) { return new URLSearchParams(window.location.search).get(k); }
 
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[m]));
+}
+
 /* ═══════════════════════════════════
-   HOME PAGE — Live Reviews
+   HOME PAGE — Live doctors + specialties + reviews
 ═══════════════════════════════════ */
-if (document.getElementById("liveReviewsGrid")) {
-  document.addEventListener("firebase-ready", loadLiveReviews);
+if (document.getElementById("homeDoctorsGrid") || document.getElementById("homeSpecialtiesGrid") || document.getElementById("liveReviewsGrid")) {
+  document.addEventListener("firebase-ready", initHome);
+
+  async function initHome() {
+    const doctors = await loadDoctors();
+    renderHomeDoctors(doctors);
+    renderHomeSpecialties(doctors);
+    renderHomeStats(doctors);
+    if (document.getElementById("liveReviewsGrid")) loadLiveReviews();
+  }
+
+  function renderHomeStats(doctors) {
+    const el = document.getElementById("homeDoctorCount");
+    if (el) el.textContent = doctors.length;
+    const specCount = new Set(doctors.map(d => d.specialtyCategory || "Other")).size;
+    const sEl = document.getElementById("homeSpecCount");
+    if (sEl) sEl.textContent = specCount;
+  }
+
+  function renderHomeSpecialties(doctors) {
+    const grid = document.getElementById("homeSpecialtiesGrid");
+    if (!grid) return;
+    const counts = {};
+    doctors.forEach(d => { const k = d.specialtyCategory || "Other"; counts[k] = (counts[k] || 0) + 1; });
+    const visible = SPECIALTIES.filter(s => counts[s.key] > 0);
+    if (visible.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--navy-m);font-size:15px">
+          <div style="font-size:40px;margin-bottom:12px">🩺</div>
+          Specialties will appear here as doctors join the platform.
+        </div>`;
+      return;
+    }
+    grid.innerHTML = visible.map(s => `
+      <a href="book.html?spec=${s.key}" class="spec-card">
+        <div class="spec-icon">${s.icon}</div>
+        <div class="spec-name">${s.label}</div>
+        <div class="spec-count">${counts[s.key]} doctor${counts[s.key] > 1 ? "s" : ""}</div>
+      </a>`).join("");
+    window._observeReveal(grid.querySelectorAll(".spec-card"));
+  }
+
+  function renderHomeDoctors(doctors) {
+    const grid = document.getElementById("homeDoctorsGrid");
+    if (!grid) return;
+    if (doctors.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:40px 24px;background:white;border-radius:var(--r-xl);border:1px solid var(--border)">
+          <div style="font-size:48px;margin-bottom:14px">👨‍⚕️</div>
+          <h3 style="font-family:var(--ff-d);font-size:22px;color:var(--navy);margin-bottom:8px">Our doctors are coming soon</h3>
+          <p style="color:var(--navy-m);font-size:15px;margin-bottom:18px;max-width:480px;margin-left:auto;margin-right:auto">We're onboarding verified doctors across India. Are you a doctor? Join HealthFirst and start receiving patient bookings instantly.</p>
+          <a href="for-doctors.html" class="btn-primary">Join as a Doctor →</a>
+        </div>`;
+      return;
+    }
+    const featured = doctors.slice(0, 4);
+    grid.innerHTML = featured.map(d => `
+      <div class="doc-card">
+        <div class="doc-photo">${escapeHtml(d.avatar || "👨‍⚕️")}</div>
+        <div class="doc-info">
+          <div class="doc-name">${escapeHtml(d.name)}</div>
+          <div class="doc-spec">${escapeHtml(d.specialty || "")}</div>
+          <div class="doc-cred">${escapeHtml(d.qualification || "")}${d.experience ? " · " + escapeHtml(d.experience) : ""}</div>
+          <div class="doc-meta-row">
+            <span class="doc-fee">₹${escapeHtml(d.fee)} / visit</span>
+            <span class="doc-avail-badge"><span class="avail-dot"></span> Available</span>
+          </div>
+          <a href="book.html?docId=${d.id}" class="btn-primary doc-book-btn">Book Appointment</a>
+        </div>
+      </div>`).join("");
+    window._observeReveal(grid.querySelectorAll(".doc-card"));
+
+    const viewAllEl = document.getElementById("homeViewAllText");
+    if (viewAllEl) viewAllEl.textContent = `View All ${doctors.length} Doctor${doctors.length > 1 ? "s" : ""} →`;
+  }
 
   async function loadLiveReviews() {
     const grid = document.getElementById("liveReviewsGrid");
+    if (!grid) return;
     const reviews = await loadReviews();
-
     if (reviews.length === 0) {
       grid.innerHTML = `
         <div style="grid-column:1/-1;text-align:center;padding:32px 16px;color:var(--navy-m)">
@@ -152,23 +292,22 @@ if (document.getElementById("liveReviewsGrid")) {
         </div>`;
       return;
     }
-
     const stars = r => "★".repeat(r) + "☆".repeat(5 - r);
-
     grid.innerHTML = reviews.slice(0, 6).map(r => `
       <div class="review-card">
         <div class="review-stars" style="color:#F59E0B;font-size:18px;margin-bottom:10px">${stars(r.rating || 5)}</div>
-        <p class="review-text" style="font-size:15px;color:var(--navy-m);line-height:1.7;margin-bottom:16px;font-style:italic">"${r.comment}"</p>
+        <p class="review-text" style="font-size:15px;color:var(--navy-m);line-height:1.7;margin-bottom:16px;font-style:italic">"${escapeHtml(r.comment)}"</p>
         <div class="review-author" style="display:flex;align-items:center;gap:12px">
           <div class="review-avatar" style="width:40px;height:40px;border-radius:50%;background:var(--teal-l);color:var(--teal-d);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">
-            ${(r.patientName || "P").slice(0,2).toUpperCase()}
+            ${escapeHtml((r.patientName || "P").slice(0,2).toUpperCase())}
           </div>
           <div>
-            <div style="font-size:14px;font-weight:700;color:var(--navy)">${r.patientName || "Patient"}</div>
-            <div style="font-size:12px;color:var(--navy-m);margin-top:2px">Visited ${r.doctor} · ${r.specialty || ""}</div>
+            <div style="font-size:14px;font-weight:700;color:var(--navy)">${escapeHtml(r.patientName || "Patient")}</div>
+            <div style="font-size:12px;color:var(--navy-m);margin-top:2px">Visited ${escapeHtml(r.doctor)} · ${escapeHtml(r.specialty || "")}</div>
           </div>
         </div>
       </div>`).join("");
+    window._observeReveal(grid.querySelectorAll(".review-card"));
   }
 }
 
@@ -177,52 +316,26 @@ if (document.getElementById("liveReviewsGrid")) {
 ═══════════════════════════════════ */
 if (document.getElementById("docList")) {
 
-  // Inject styles for pay option modal + feedback modal
   const extraStyles = document.createElement("style");
   extraStyles.textContent = `
-    /* Pay option modal */
-    .modal-overlay {
-      position: fixed; inset: 0; background: rgba(15,23,42,.55);
-      display: flex; align-items: flex-end; justify-content: center;
-      z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .2s;
-    }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: flex; align-items: flex-end; justify-content: center; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .2s; }
     .modal-overlay.open { opacity: 1; pointer-events: all; }
-    .modal-sheet {
-      background: white; border-radius: 24px 24px 0 0; padding: 28px 24px 36px;
-      width: 100%; max-width: 480px;
-      transform: translateY(60px); transition: transform .25s cubic-bezier(.34,1.2,.64,1);
-    }
+    .modal-sheet { background: white; border-radius: 24px 24px 0 0; padding: 28px 24px 36px; width: 100%; max-width: 480px; transform: translateY(60px); transition: transform .25s cubic-bezier(.34,1.2,.64,1); }
     .modal-overlay.open .modal-sheet { transform: translateY(0); }
     .modal-handle { width: 40px; height: 4px; background: var(--border-md); border-radius: 2px; margin: 0 auto 20px; }
     .modal-title { font-family: var(--ff-d); font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
     .modal-sub { font-size: 14px; color: var(--navy-m); margin-bottom: 22px; }
     .pay-btn-row { display: flex; flex-direction: column; gap: 10px; }
-    .pay-choice {
-      padding: 16px 20px; border-radius: var(--r-lg); border: 2px solid var(--border);
-      font-size: 15px; font-weight: 700; font-family: var(--ff);
-      cursor: pointer; display: flex; align-items: center; gap: 14px; text-align: left;
-      transition: all .18s; background: white;
-    }
+    .pay-choice { padding: 16px 20px; border-radius: var(--r-lg); border: 2px solid var(--border); font-size: 15px; font-weight: 700; font-family: var(--ff); cursor: pointer; display: flex; align-items: center; gap: 14px; text-align: left; transition: all .18s; background: white; }
     .pay-choice:hover { border-color: var(--teal); background: var(--teal-l); }
     .pay-choice-icon { font-size: 28px; flex-shrink: 0; }
     .pay-choice-text small { display: block; font-size: 12px; font-weight: 400; color: var(--navy-m); margin-top: 3px; }
     .pay-choice.primary { background: var(--teal); border-color: var(--teal); color: white; }
     .pay-choice.primary small { color: rgba(255,255,255,.8); }
     .pay-choice.primary:hover { background: var(--teal-d); }
-
-    /* Feedback modal */
-    .feedback-overlay {
-      position: fixed; inset: 0; background: rgba(15,23,42,.6);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .2s;
-      padding: 20px;
-    }
+    .feedback-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.6); display: flex; align-items: center; justify-content: center; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .2s; padding: 20px; }
     .feedback-overlay.open { opacity: 1; pointer-events: all; }
-    .feedback-box {
-      background: white; border-radius: 20px; padding: 28px 24px;
-      width: 100%; max-width: 420px;
-      transform: scale(.92); transition: transform .25s cubic-bezier(.34,1.2,.64,1);
-    }
+    .feedback-box { background: white; border-radius: 20px; padding: 28px 24px; width: 100%; max-width: 420px; transform: scale(.92); transition: transform .25s cubic-bezier(.34,1.2,.64,1); }
     .feedback-overlay.open .feedback-box { transform: scale(1); }
     .fb-title { font-family: var(--ff-d); font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
     .fb-sub { font-size: 14px; color: var(--navy-m); margin-bottom: 20px; }
@@ -238,7 +351,6 @@ if (document.getElementById("docList")) {
   `;
   document.head.appendChild(extraStyles);
 
-  // ── Pay option modal HTML ──
   const payModal = document.createElement("div");
   payModal.className = "modal-overlay";
   payModal.id = "payModal";
@@ -250,17 +362,11 @@ if (document.getElementById("docList")) {
       <div class="pay-btn-row">
         <button class="pay-choice primary" onclick="processPayment('online')">
           <span class="pay-choice-icon">💳</span>
-          <span class="pay-choice-text">
-            Pay Online Now
-            <small>Secure payment · Instant confirmation · Razorpay</small>
-          </span>
+          <span class="pay-choice-text">Pay Online Now<small>Secure payment · Instant confirmation · Razorpay</small></span>
         </button>
         <button class="pay-choice" onclick="processPayment('clinic')">
           <span class="pay-choice-icon">🏥</span>
-          <span class="pay-choice-text">
-            Pay at Clinic
-            <small>Cash or card on arrival · Slot reserved for you</small>
-          </span>
+          <span class="pay-choice-text">Pay at Clinic<small>Cash or card on arrival · Slot reserved for you</small></span>
         </button>
       </div>
       <div style="margin-top:14px;font-size:12px;color:var(--navy-m);text-align:center">🔒 Payments processed securely by Razorpay</div>
@@ -268,7 +374,6 @@ if (document.getElementById("docList")) {
     </div>`;
   document.body.appendChild(payModal);
 
-  // ── Feedback modal HTML ──
   const fbModal = document.createElement("div");
   fbModal.className = "feedback-overlay";
   fbModal.id = "fbModal";
@@ -290,42 +395,93 @@ if (document.getElementById("docList")) {
     </div>`;
   document.body.appendChild(fbModal);
 
-  // Pay modal state
   let pendingBookingData = null;
   let selectedRating = 5;
   let completedBookingForFeedback = null;
+  let allDoctors = [];
 
-  window.closePayModal = function () {
-    document.getElementById("payModal").classList.remove("open");
-  };
-  window.closeFbModal = function () {
-    document.getElementById("fbModal").classList.remove("open");
-  };
+  window.closePayModal = () => document.getElementById("payModal").classList.remove("open");
+  window.closeFbModal = () => document.getElementById("fbModal").classList.remove("open");
 
-  // Star picker
   window.pickStar = function (val) {
     selectedRating = val;
-    document.querySelectorAll(".star-pick").forEach(s => {
-      s.classList.toggle("lit", parseInt(s.dataset.val) <= val);
-    });
+    document.querySelectorAll(".star-pick").forEach(s => s.classList.toggle("lit", parseInt(s.dataset.val) <= val));
   };
-  // Pre-light 5 stars
   setTimeout(() => pickStar(5), 100);
 
-  // Specialty filter
-  const specParam = getParam("spec");
-  const docParam  = getParam("doc");
-  if (specParam) {
-    const btn = Array.from(document.querySelectorAll(".sf-btn")).find(b => b.textContent.includes(specParam));
-    if (btn) btn.click();
+  document.addEventListener("firebase-ready", initBookingPage);
+
+  async function initBookingPage() {
+    allDoctors = await loadDoctors();
+    renderSpecFilter(allDoctors);
+    renderDoctorList(allDoctors);
+
+    const specParam = getParam("spec");
+    const docIdParam = getParam("docId");
+    if (specParam) {
+      const btn = document.querySelector(`.sf-btn[data-spec="${specParam}"]`);
+      if (btn) btn.click();
+    }
+    if (docIdParam) {
+      setTimeout(() => {
+        const card = document.querySelector(`.doc-list-card[data-docid="${docIdParam}"]`);
+        if (card) card.click();
+      }, 150);
+    }
   }
-  const docMap = { priya:"Dr. Priya Sharma", rahul:"Dr. Rahul Mehta", suman:"Dr. Suman Verma", arjun:"Dr. Arjun Patel" };
-  if (docParam && docMap[docParam]) {
-    setTimeout(() => {
-      const card = Array.from(document.querySelectorAll(".doc-list-card"))
-        .find(c => c.querySelector(".dli-name")?.textContent === docMap[docParam]);
-      if (card) card.click();
-    }, 150);
+
+  function renderSpecFilter(doctors) {
+    const filter = document.getElementById("specFilter");
+    if (!filter) return;
+    const counts = {};
+    doctors.forEach(d => { const k = d.specialtyCategory || "Other"; counts[k] = (counts[k] || 0) + 1; });
+    const total = doctors.length;
+    let html = `<button class="sf-btn active" data-spec="All" onclick="filterBySpec(this,'All')"><span class="sf-icon">🏥</span> All Doctors <span class="sf-count">${total}</span></button>`;
+    SPECIALTIES.forEach(s => {
+      if (counts[s.key] > 0) {
+        html += `<button class="sf-btn" data-spec="${s.key}" onclick="filterBySpec(this,'${s.key}')"><span class="sf-icon">${s.icon}</span> ${s.label} <span class="sf-count">${counts[s.key]}</span></button>`;
+      }
+    });
+    filter.innerHTML = html;
+  }
+
+  function renderDoctorList(doctors) {
+    const list = document.getElementById("docList");
+    if (!list) return;
+    if (doctors.length === 0) {
+      list.innerHTML = `
+        <div style="text-align:center;padding:48px 24px;background:white;border-radius:var(--r-xl);border:1px solid var(--border)">
+          <div style="font-size:56px;margin-bottom:14px">👨‍⚕️</div>
+          <h3 style="font-family:var(--ff-d);font-size:24px;color:var(--navy);margin-bottom:10px">No doctors listed yet</h3>
+          <p style="color:var(--navy-m);font-size:15px;max-width:440px;margin:0 auto 20px">We're onboarding verified doctors right now. Check back soon, or if you're a doctor, join us!</p>
+          <a href="for-doctors.html" class="btn-primary">Join as a Doctor →</a>
+        </div>`;
+      return;
+    }
+    list.innerHTML = doctors.map(d => {
+      const sName = escapeHtml(d.name).replace(/'/g, "&#39;");
+      const sAvatar = escapeHtml(d.avatar || "👨‍⚕️");
+      const sSpec = escapeHtml(d.specialty || "").replace(/'/g, "&#39;");
+      const sFee = escapeHtml(d.fee);
+      const sCred = escapeHtml((d.qualification || "") + (d.experience ? " · " + d.experience : "")).replace(/'/g, "&#39;");
+      const sCity = escapeHtml(d.city || "");
+      const onclickData = `'${sName}','${sAvatar}','${sSpec}','${sFee}','${sCred}'`;
+      return `
+        <div class="doc-list-card" data-spec="${d.specialtyCategory || 'Other'}" data-docid="${d.id}" onclick="selectDoc(this,${onclickData})">
+          <div class="dla">${sAvatar}</div>
+          <div class="dli">
+            <div class="dli-name">${sName}</div>
+            <div class="dli-spec">${sSpec}${sCity ? ' · ' + sCity : ''}</div>
+            <div class="dli-meta"><span>🎓 ${sCred}</span></div>
+          </div>
+          <div class="dlr">
+            <div class="dlr-fee">₹${sFee}<small>per visit</small></div>
+            <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="event.stopPropagation();selectDoc(this.closest('.doc-list-card'),${onclickData})">Book</button>
+            <span style="font-size:12px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>Available</span>
+          </div>
+        </div>`;
+    }).join("");
+    window._observeReveal(list.querySelectorAll(".doc-list-card"));
   }
 
   window.filterBySpec = function (btn, spec) {
@@ -336,18 +492,18 @@ if (document.getElementById("docList")) {
     });
   };
 
-  let selectedDoc     = null;
-  let selectedSlot    = null;
+  let selectedDoc = null;
+  let selectedSlot = null;
   let selectedDateIdx = 0;
 
   window.selectDoc = function (cardEl, name, avatar, spec, fee, cred) {
     selectedDoc = { name, avatar, spec, fee, cred };
     document.getElementById("doctorListView").style.display = "none";
-    document.getElementById("bookingPanel").style.display   = "block";
+    document.getElementById("bookingPanel").style.display = "block";
     document.getElementById("successView").classList.remove("show");
     document.getElementById("bpAvatar").textContent = avatar;
-    document.getElementById("bpName").textContent   = name;
-    document.getElementById("bpSpec").textContent   = `${spec} · ₹${fee}`;
+    document.getElementById("bpName").textContent = name;
+    document.getElementById("bpSpec").textContent = `${spec} · ₹${fee}`;
     selectedSlot = null; selectedDateIdx = 0;
     buildDatePicker(); buildTimeSlots(); updateSummaryPanel();
     document.getElementById("bookingPanel").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -355,14 +511,14 @@ if (document.getElementById("docList")) {
 
   window.backToList = function () {
     document.getElementById("doctorListView").style.display = "block";
-    document.getElementById("bookingPanel").style.display   = "none";
+    document.getElementById("bookingPanel").style.display = "none";
     document.getElementById("successView").classList.remove("show");
     selectedDoc = null;
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
 
-  const DAYS       = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const MONTHS     = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const MONTH_LONG = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   function getSelectedDateKey() {
@@ -431,31 +587,29 @@ if (document.getElementById("docList")) {
     const sb = document.getElementById("bookingSummary");
     if (sb) {
       sb.style.display = "block";
-      document.getElementById("sumDoc").textContent      = selectedDoc.name;
-      document.getElementById("sumSpec").textContent     = selectedDoc.spec;
+      document.getElementById("sumDoc").textContent = selectedDoc.name;
+      document.getElementById("sumSpec").textContent = selectedDoc.spec;
       document.getElementById("sumDateTime").textContent = `${dateStr} · ${selectedSlot || "—"}`;
-      document.getElementById("sumFee").textContent      = `₹${selectedDoc.fee}`;
+      document.getElementById("sumFee").textContent = `₹${selectedDoc.fee}`;
     }
   }
 
-  // ── Validate form ──
   async function validateAndBuild() {
-    const name   = document.getElementById("pName")?.value.trim();
-    const phone  = document.getElementById("pPhone")?.value.trim();
-    const age    = document.getElementById("pAge")?.value.trim();
+    const name = document.getElementById("pName")?.value.trim();
+    const phone = document.getElementById("pPhone")?.value.trim();
+    const age = document.getElementById("pAge")?.value.trim();
     const gender = document.getElementById("pGender")?.value;
     const reason = document.getElementById("pReason")?.value.trim();
 
-    if (!name)                       { alert("Please enter your name.");                     return null; }
+    if (!name) { alert("Please enter your name."); return null; }
     if (!phone || phone.length < 10) { alert("Please enter a valid 10-digit phone number."); return null; }
-    if (!selectedSlot)               { alert("Please select a time slot.");                  return null; }
+    if (!selectedSlot) { alert("Please select a time slot."); return null; }
 
     const today = new Date(); const d = new Date(today); d.setDate(today.getDate() + selectedDateIdx);
     const dateStr = `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTH_LONG[d.getMonth()]}`;
     const dateKey = getSelectedDateKey();
-    const token   = "#" + String(Math.floor(Math.random() * 900) + 100);
+    const token = "#" + String(Math.floor(Math.random() * 900) + 100);
 
-    // Check slot still available
     const stillBooked = await getBookedSlots(selectedDoc.name, dateKey);
     if (stillBooked.includes(selectedSlot)) {
       alert("⚠️ This slot was just taken! Please pick another.");
@@ -465,29 +619,21 @@ if (document.getElementById("docList")) {
     return { name, phone, age, gender, reason, dateStr, dateKey, token };
   }
 
-  // ── Confirm button → open pay modal ──
   window.confirmBooking = async function () {
     const formData = await validateAndBuild();
     if (!formData) return;
     pendingBookingData = formData;
-
-    // Show pay modal
     document.getElementById("payModalSub").textContent =
       `${selectedDoc.name} · ${formData.dateStr} · ${selectedSlot} · ₹${selectedDoc.fee}`;
     document.getElementById("payModal").classList.add("open");
   };
 
-  // ── Process payment choice ──
   window.processPayment = async function (method) {
     closePayModal();
-    if (method === "online") {
-      await openRazorpay(pendingBookingData);
-    } else {
-      await finalizeBooking(pendingBookingData, "confirmed", "pay_at_clinic", null);
-    }
+    if (method === "online") await openRazorpay(pendingBookingData);
+    else await finalizeBooking(pendingBookingData, "confirmed", "pay_at_clinic", null);
   };
 
-  // ── Razorpay checkout ──
   async function openRazorpay(formData) {
     const loaded = await loadRazorpay();
     if (!loaded) {
@@ -495,7 +641,6 @@ if (document.getElementById("docList")) {
       document.getElementById("payModal").classList.add("open");
       return;
     }
-
     const options = {
       key: RAZORPAY_KEY,
       amount: parseInt(selectedDoc.fee) * 100,
@@ -508,12 +653,10 @@ if (document.getElementById("docList")) {
       theme: { color: "#0D9488" },
       handler: async function (response) {
         await finalizeBooking(formData, "confirmed", "paid_online", {
-          razorpay_payment_id: response.razorpay_payment_id,
-          amount: selectedDoc.fee
+          razorpay_payment_id: response.razorpay_payment_id, amount: selectedDoc.fee
         });
       }
     };
-
     const rzp = new window.Razorpay(options);
     rzp.on("payment.failed", function (r) {
       alert("❌ Payment failed: " + r.error.description + "\n\nYou can still book by choosing 'Pay at Clinic'.");
@@ -522,51 +665,28 @@ if (document.getElementById("docList")) {
     rzp.open();
   }
 
-  // ── Save booking + show success ──
   async function finalizeBooking(formData, status, paymentMethod, paymentDetails) {
     const savedId = await saveBooking({
-      patientName:    formData.name,
-      phone:          formData.phone,
-      age:            formData.age,
-      gender:         formData.gender,
-      reason:         formData.reason,
-      doctor:         selectedDoc.name,
-      specialty:      selectedDoc.spec,
-      fee:            selectedDoc.fee,
-      date:           formData.dateKey,
-      dateDisplay:    formData.dateStr,
-      slot:           selectedSlot,
-      token:          formData.token,
-      doctorDate:     selectedDoc.name + "_" + formData.dateKey,
-      status,
-      paymentMethod,
-      paymentDetails: paymentDetails || {}
+      patientName: formData.name, phone: formData.phone, age: formData.age, gender: formData.gender,
+      reason: formData.reason, doctor: selectedDoc.name, specialty: selectedDoc.spec, fee: selectedDoc.fee,
+      date: formData.dateKey, dateDisplay: formData.dateStr, slot: selectedSlot, token: formData.token,
+      doctorDate: selectedDoc.name + "_" + formData.dateKey,
+      status, paymentMethod, paymentDetails: paymentDetails || {}
     });
-
-    // Store for feedback
-    completedBookingForFeedback = {
-      bookingId: savedId,
-      patientName: formData.name,
-      doctor: selectedDoc.name,
-      specialty: selectedDoc.spec
-    };
-
+    completedBookingForFeedback = { bookingId: savedId, patientName: formData.name, doctor: selectedDoc.name, specialty: selectedDoc.spec };
     const isPaid = paymentMethod === "paid_online";
-
     document.getElementById("bookingPanel").style.display = "none";
     const sv = document.getElementById("successView");
     sv.classList.add("show");
     document.getElementById("tokenNum").textContent = formData.token;
     document.getElementById("successBody").innerHTML = `
-      <strong>${formData.name}</strong>, your appointment with
-      <strong>${selectedDoc.name}</strong> (${selectedDoc.spec}) is confirmed.<br><br>
-      📅 <strong>${formData.dateStr}</strong> at <strong>${selectedSlot}</strong><br>
-      💰 Fee: <strong>₹${selectedDoc.fee}</strong> —
-      ${isPaid
-        ? `<span style="color:var(--green);font-weight:600">✅ Paid online${paymentDetails?.razorpay_payment_id ? ` · ${paymentDetails.razorpay_payment_id}` : ""}</span>`
-        : `<span style="color:var(--amber);font-weight:600">🏥 Pay at clinic on arrival</span>`
-      }<br><br>
-      📲 Confirmation sent to <strong>${formData.phone}</strong><br>
+      <strong>${escapeHtml(formData.name)}</strong>, your appointment with
+      <strong>${escapeHtml(selectedDoc.name)}</strong> (${escapeHtml(selectedDoc.spec)}) is confirmed.<br><br>
+      📅 <strong>${escapeHtml(formData.dateStr)}</strong> at <strong>${escapeHtml(selectedSlot)}</strong><br>
+      💰 Fee: <strong>₹${escapeHtml(selectedDoc.fee)}</strong> —
+      ${isPaid ? `<span style="color:var(--green);font-weight:600">✅ Paid online${paymentDetails?.razorpay_payment_id ? ` · ${escapeHtml(paymentDetails.razorpay_payment_id)}` : ""}</span>`
+               : `<span style="color:var(--amber);font-weight:600">🏥 Pay at clinic on arrival</span>`}<br><br>
+      📲 Confirmation sent to <strong>${escapeHtml(formData.phone)}</strong><br>
       ⏰ Please arrive 10 minutes before your slot.<br>
       🆔 Bring any previous prescriptions or reports.
     `;
@@ -580,24 +700,16 @@ if (document.getElementById("docList")) {
     document.getElementById("summaryPanel").innerHTML = "No appointment selected yet.<br>Choose a doctor and time slot to begin.";
   };
 
-  document.addEventListener("firebase-ready", () => {
-    if (selectedDoc) buildTimeSlots();
-  });
-
-  // ── Feedback submission ──
   window.submitFeedback = async function () {
     if (!completedBookingForFeedback) { closeFbModal(); return; }
     const comment = document.getElementById("fbComment")?.value.trim();
-    if (!comment && selectedRating === 5) {
-      // Allow empty comment with 5 stars
-    }
     await saveFeedback({
-      bookingId:   completedBookingForFeedback.bookingId,
+      bookingId: completedBookingForFeedback.bookingId,
       patientName: completedBookingForFeedback.patientName,
-      doctor:      completedBookingForFeedback.doctor,
-      specialty:   completedBookingForFeedback.specialty,
-      rating:      selectedRating,
-      comment:     comment || "Great experience!"
+      doctor: completedBookingForFeedback.doctor,
+      specialty: completedBookingForFeedback.specialty,
+      rating: selectedRating,
+      comment: comment || "Great experience!"
     });
     closeFbModal();
     alert("✅ Thank you for your feedback! It helps other patients choose the right doctor.");
@@ -606,7 +718,6 @@ if (document.getElementById("docList")) {
 
 /* ═══════════════════════════════════
    DOCTOR DASHBOARD
-   — Mark Done → triggers feedback SMS link
 ═══════════════════════════════════ */
 if (document.getElementById("queue-upcoming")) {
   document.addEventListener("firebase-ready", loadTodayQueue);
@@ -621,27 +732,20 @@ if (document.getElementById("queue-upcoming")) {
       return;
     }
 
-    container.innerHTML = bookings
-      .filter(b => b.status === "confirmed")
-      .map((b, i) => `
-        <div class="appt-item" id="appt-${b.id}">
-          <div class="ai-token">${i + 1}</div>
-          <div class="ai-info">
-            <div class="ai-name">${b.patientName} · ${b.gender || ""}, ${b.age || ""}</div>
-            <div class="ai-detail">
-              ${b.slot} · ${b.reason || "General consultation"} · Token ${b.token}
-              &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${
-                b.paymentMethod === "paid_online"
-                  ? "background:#ECFDF5;color:#065F46"
-                  : "background:#FFF3E0;color:#E65100"
-              }">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
-            </div>
+    container.innerHTML = bookings.filter(b => b.status === "confirmed").map((b, i) => `
+      <div class="appt-item" id="appt-${b.id}">
+        <div class="ai-token">${i + 1}</div>
+        <div class="ai-info">
+          <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.gender || "")}, ${escapeHtml(b.age || "")}</div>
+          <div class="ai-detail">${escapeHtml(b.slot)} · ${escapeHtml(b.reason || "General consultation")} · Token ${escapeHtml(b.token)}
+            &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod === "paid_online" ? "background:#ECFDF5;color:#065F46" : "background:#FFF3E0;color:#E65100"}">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
           </div>
-          <div class="ai-actions">
-            <button class="ai-btn done" onclick="markDone('${b.id}','${b.patientName}','${b.phone || ""}')">✓ Done</button>
-            <button class="ai-btn cancel" onclick="cancelAppt('${b.id}')">✗ Cancel</button>
-          </div>
-        </div>`).join("");
+        </div>
+        <div class="ai-actions">
+          <button class="ai-btn done" onclick="markDone('${b.id}','${escapeHtml(b.patientName)}','${b.phone || ""}')">✓ Done</button>
+          <button class="ai-btn cancel" onclick="cancelAppt('${b.id}')">✗ Cancel</button>
+        </div>
+      </div>`).join("");
 
     const countEl = document.getElementById("waitingCount");
     if (countEl) countEl.textContent = bookings.filter(b => b.status === "confirmed").length;
@@ -649,17 +753,13 @@ if (document.getElementById("queue-upcoming")) {
     if (kpiEl) kpiEl.textContent = bookings.length;
   }
 
-  // Mark done → send WhatsApp feedback link to patient
   window.markDone = async function (id, patientName, phone) {
     await updateBookingStatus(id, "done");
     const row = document.getElementById("appt-" + id);
     if (row) row.querySelector(".ai-actions").innerHTML = '<span class="status-badge sb-done">✓ Done</span>';
-
-    // Send WhatsApp feedback link if phone available
     if (phone && phone.length >= 10) {
       const feedbackUrl = `${window.location.origin}/book.html?feedback=${id}`;
       const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today. Please share your feedback: ${feedbackUrl}`);
-      // Open WhatsApp in new tab for doctor to send
       const waLink = `https://wa.me/91${phone}?text=${msg}`;
       const sendWA = confirm(`✅ Appointment marked as done!\n\nSend a WhatsApp feedback request to ${patientName}?`);
       if (sendWA) window.open(waLink, "_blank");
@@ -672,22 +772,21 @@ if (document.getElementById("queue-upcoming")) {
     if (row) { row.style.opacity = "0.5"; row.querySelector(".ai-actions").innerHTML = '<span class="status-badge sb-cancelled">Cancelled</span>'; }
   };
 
-  // Check if patient came via feedback link
   const fbParam = getParam("feedback");
-  if (fbParam) {
-    document.getElementById("fbModal") && document.getElementById("fbModal").classList.add("open");
-  }
+  if (fbParam) document.getElementById("fbModal") && document.getElementById("fbModal").classList.add("open");
 }
 
 /* ═══════════════════════════════════
-   ADMIN PANEL
+   ADMIN PANEL — bookings + doctor management + applications
 ═══════════════════════════════════ */
-if (document.getElementById("recentBookingsTable")) {
+if (document.getElementById("recentBookingsTable") || document.getElementById("docManageList")) {
   document.addEventListener("firebase-ready", loadAdminData);
 
   async function loadAdminData() {
     const bookings = await loadBookings();
-    const reviews  = await loadReviews();
+    const reviews = await loadReviews();
+    const doctors = await loadDoctors();
+    const applications = await loadDoctorApplications();
 
     const table = document.getElementById("recentBookingsTable");
     if (table) {
@@ -695,15 +794,52 @@ if (document.getElementById("recentBookingsTable")) {
         ? `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings yet.</div>`
         : bookings.slice(0, 20).map(b => `
             <div class="appt-item">
-              <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${(b.patientName||"??").slice(0,2).toUpperCase()}</div>
+              <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${escapeHtml((b.patientName||"??").slice(0,2).toUpperCase())}</div>
               <div class="ai-info">
-                <div class="ai-name">${b.patientName} → ${b.doctor}</div>
-                <div class="ai-detail">${b.specialty} · ${b.dateDisplay} · ${b.slot} · ₹${b.fee} · Token ${b.token}
+                <div class="ai-name">${escapeHtml(b.patientName)} → ${escapeHtml(b.doctor)}</div>
+                <div class="ai-detail">${escapeHtml(b.specialty)} · ${escapeHtml(b.dateDisplay)} · ${escapeHtml(b.slot)} · ₹${escapeHtml(b.fee)} · Token ${escapeHtml(b.token)}
                   &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod==="paid_online"?"background:#ECFDF5;color:#065F46":"background:#FFF3E0;color:#E65100"}">${b.paymentMethod==="paid_online"?"✅ Paid":"🏥 Clinic"}</span>
                 </div>
               </div>
-              <span class="status-badge ${b.status==="done"?"sb-done":b.status==="cancelled"?"sb-cancelled":"sb-waiting"}">${b.status}</span>
+              <span class="status-badge ${b.status==="done"?"sb-done":b.status==="cancelled"?"sb-cancelled":"sb-waiting"}">${escapeHtml(b.status)}</span>
             </div>`).join("");
+    }
+
+    const docList = document.getElementById("docManageList");
+    if (docList) {
+      docList.innerHTML = doctors.length === 0
+        ? `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No doctors added yet. Use the form below to add your first doctor.</div>`
+        : doctors.map(d => `
+            <div class="appt-item">
+              <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px">${escapeHtml(d.avatar||"👨‍⚕️")}</div>
+              <div class="ai-info">
+                <div class="ai-name">${escapeHtml(d.name)}</div>
+                <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
+              </div>
+              <button class="ai-btn cancel" onclick="removeDoctorAdmin('${d.id}','${escapeHtml(d.name).replace(/'/g, "\\'")}')">Remove</button>
+            </div>`).join("");
+
+      const countEl = document.getElementById("docCount");
+      if (countEl) countEl.textContent = doctors.length;
+    }
+
+    const appList = document.getElementById("docApplications");
+    if (appList) {
+      appList.innerHTML = applications.length === 0
+        ? `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No doctor applications yet.</div>`
+        : applications.map(a => `
+            <div class="appt-item">
+              <div class="ai-token" style="background:var(--amber-l);color:var(--amber);font-size:14px">${escapeHtml((a.name||"??").slice(0,2).toUpperCase())}</div>
+              <div class="ai-info">
+                <div class="ai-name">${escapeHtml(a.name)} · ${escapeHtml(a.specialty||"")}</div>
+                <div class="ai-detail">📞 ${escapeHtml(a.phone||"")} · ✉️ ${escapeHtml(a.email||"")} · ${escapeHtml(a.city||"")}${a.experience ? " · " + escapeHtml(a.experience) + " yrs" : ""}</div>
+                ${a.message ? `<div class="ai-detail" style="font-style:italic;margin-top:4px">"${escapeHtml(a.message)}"</div>` : ""}
+              </div>
+              <span class="status-badge sb-waiting">${escapeHtml(a.status||"pending")}</span>
+            </div>`).join("");
+
+      const appCountEl = document.getElementById("appCount");
+      if (appCountEl) appCountEl.textContent = applications.length;
     }
 
     const thisMonth = bookings.filter(b => {
@@ -716,10 +852,85 @@ if (document.getElementById("recentBookingsTable")) {
 
     const el = id => document.getElementById(id);
     if (el("adminTotalBookings")) el("adminTotalBookings").textContent = thisMonth.length;
-    if (el("adminRevenue"))       el("adminRevenue").textContent = "₹" + onlineRevenue.toLocaleString("hi-IN");
-    if (el("adminTotalAll"))      el("adminTotalAll").textContent = bookings.length;
-    if (el("adminAvgRating"))     el("adminAvgRating").textContent = avgRating + " ★ (" + reviews.length + " reviews)";
+    if (el("adminRevenue")) el("adminRevenue").textContent = "₹" + onlineRevenue.toLocaleString("hi-IN");
+    if (el("adminTotalAll")) el("adminTotalAll").textContent = bookings.length;
+    if (el("adminAvgRating")) el("adminAvgRating").textContent = avgRating + " ★ (" + reviews.length + " reviews)";
+    if (el("adminDocCount")) el("adminDocCount").textContent = doctors.length;
   }
+
+  window.adminAddDoctor = async function () {
+    const get = id => document.getElementById(id)?.value.trim();
+    const data = {
+      name: get("ndName"),
+      specialty: get("ndSpecialty"),
+      specialtyCategory: get("ndCategory"),
+      qualification: get("ndQual"),
+      experience: get("ndExp"),
+      fee: parseInt(get("ndFee")) || 0,
+      city: get("ndCity"),
+      avatar: get("ndAvatar") || "👨‍⚕️"
+    };
+    if (!data.name || !data.specialty || !data.fee) {
+      alert("Please fill in at least: Name, Specialty, and Fee.");
+      return;
+    }
+    const id = await saveDoctor(data);
+    if (id) {
+      alert(`✅ Dr. ${data.name} added successfully!`);
+      ["ndName","ndSpecialty","ndQual","ndExp","ndFee","ndCity","ndAvatar"].forEach(f => {
+        const el = document.getElementById(f); if (el) el.value = "";
+      });
+      loadAdminData();
+    } else {
+      alert("❌ Failed to add doctor. Please try again.");
+    }
+  };
+
+  window.removeDoctorAdmin = async function (id, name) {
+    if (!confirm(`Remove ${name} from HealthFirst?\n\nTheir profile will no longer be visible to patients. Past bookings stay intact.`)) return;
+    await deleteDoctor(id);
+    loadAdminData();
+  };
+}
+
+/* ═══════════════════════════════════
+   FOR-DOCTORS PAGE — application form
+═══════════════════════════════════ */
+if (document.getElementById("doctorApplicationForm")) {
+  window.submitDoctorApplication = async function (e) {
+    if (e) e.preventDefault();
+    const get = id => document.getElementById(id)?.value.trim();
+    const data = {
+      name: get("appName"),
+      email: get("appEmail"),
+      phone: get("appPhone"),
+      specialty: get("appSpecialty"),
+      qualification: get("appQual"),
+      experience: get("appExp"),
+      city: get("appCity"),
+      message: get("appMessage")
+    };
+    if (!data.name || !data.email || !data.phone || !data.specialty) {
+      alert("Please fill in: Name, Email, Phone, and Specialty.");
+      return false;
+    }
+    if (data.phone.length < 10) {
+      alert("Please enter a valid 10-digit phone number.");
+      return false;
+    }
+    const submitBtn = document.getElementById("appSubmitBtn");
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Submitting..."; }
+    const id = await saveDoctorApplication(data);
+    if (id) {
+      document.getElementById("doctorApplicationForm").style.display = "none";
+      document.getElementById("doctorAppSuccess").style.display = "block";
+      document.getElementById("doctorAppSuccess").scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      alert("Something went wrong. Please try again or email us directly.");
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Submit Application →"; }
+    }
+    return false;
+  };
 }
 
 // Home smooth scroll
