@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Appointments — HealthFirst</title>
+<meta name="description" content="View your HealthFirst appointments. Saved bookings, status, and lookup links.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="mainNav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">🏥</span>
+      <span class="logo-text">HealthFirst</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html#doctors">Doctors</a></li>
+      <li><a href="index.html#specialties">Specialties</a></li>
+      <li><a href="my-appointments.html" style="color:var(--teal)">My Appointments</a></li>
+      <li><a href="for-doctors.html">For Doctors</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="book.html" class="btn-primary nav-book">Book Appointment</a>
+      <button class="burger" id="burger" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html#doctors">Doctors</a>
+    <a href="index.html#specialties">Specialties</a>
+    <a href="my-appointments.html">My Appointments</a>
+    <a href="for-doctors.html">For Doctors</a>
+    <a href="book.html" class="btn-primary" style="text-align:center;margin-top:8px">Book Appointment</a>
+  </div>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div class="ph-inner">
+    <a href="index.html" class="ph-back">← Back to home</a>
+    <div class="ph-title">My Appointments</div>
+    <div class="ph-sub">Your saved bookings on this device. Bookmark this page or save your booking links to access them anywhere.</div>
+  </div>
+</div>
+
+<div class="container" style="padding-top:32px;padding-bottom:80px;max-width:760px">
+
+  <!-- Bookings list -->
+  <div id="myAppointmentsList" style="display:none">
+    <div style="text-align:center;padding:32px;color:var(--navy-m);font-size:14px">⏳ Loading your appointments...</div>
+  </div>
+
+  <!-- Empty state (shown if no saved bookings) -->
+  <div id="myAppointmentsEmpty" style="display:none">
+    <div style="background:white;border-radius:var(--r-xl);padding:48px 32px;text-align:center;border:1px solid var(--border)">
+      <div style="font-size:56px;margin-bottom:16px">📋</div>
+      <h2 style="font-family:var(--ff-d);font-size:26px;color:var(--navy);margin-bottom:10px">No saved appointments</h2>
+      <p style="color:var(--navy-m);font-size:15px;line-height:1.6;max-width:480px;margin:0 auto 24px">
+        Bookings you make from this browser will appear here automatically. If you booked from a different device, paste your booking link below to view it.
+      </p>
+      <a href="book.html" class="btn-primary btn-lg">Book an Appointment →</a>
+    </div>
+  </div>
+
+  <!-- Lookup by link -->
+  <div style="background:var(--teal-l);border-radius:var(--r-xl);padding:24px;margin-top:32px;border:1px solid var(--teal-ll)">
+    <div style="font-family:var(--ff-d);font-size:18px;font-weight:700;color:var(--navy);margin-bottom:6px">🔍 Have a booking link?</div>
+    <div style="font-size:13px;color:var(--navy-m);margin-bottom:14px">Paste the link or token from your confirmation message to view that booking:</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="text" id="lookupCode" placeholder="https://...?t=tk_xyz... or just tk_xyz..." style="flex:1;min-width:240px;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:white;outline:none" onkeypress="if(event.key==='Enter')checkLookupCode()">
+      <button onclick="checkLookupCode()" class="btn-primary" style="font-size:14px;padding:10px 20px">View Booking</button>
+    </div>
+  </div>
+
+  <!-- Privacy note -->
+  <div style="margin-top:32px;padding:16px 20px;background:white;border-radius:var(--r-lg);border:1px solid var(--border);font-size:13px;color:var(--navy-m);line-height:1.6">
+    <strong style="color:var(--navy)">🔒 About this page</strong><br>
+    Bookings are saved in your browser's local storage on this device. They are NOT synced across devices or browsers. To access bookings elsewhere, copy your booking link and bookmark it on the other device.
+    <br><br>
+    Need to <strong>cancel</strong> or <strong>reschedule</strong>? Contact us at <a href="mailto:hello@healthfirst.in" style="color:var(--teal);font-weight:600">hello@healthfirst.in</a> or WhatsApp directly.
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <div class="logo" style="margin-bottom:12px"><span class="logo-icon">🏥</span><span class="logo-text">HealthFirst</span></div>
+      <p>India's doctor booking platform. Book appointments online, skip the queue, get better faster.</p>
+    </div>
+    <div class="footer-links">
+      <div class="fl-col">
+        <div class="fl-title">For Patients</div>
+        <a href="book.html">Book Appointment</a>
+        <a href="my-appointments.html">My Appointments</a>
+        <a href="index.html#doctors">Browse Doctors</a>
+        <a href="index.html#contact">Contact Us</a>
+      </div>
+      <div class="fl-col">
+        <div class="fl-title">For Doctors</div>
+        <a href="for-doctors.html">Why HealthFirst</a>
+        <a href="for-doctors.html#pricing">Pricing</a>
+        <a href="for-doctors.html#apply">Apply to Join</a>
+        <a href="doctor.html">Doctor Login</a>
+      </div>
+      <div class="fl-col">
+        <div class="fl-title">Company</div>
+        <a href="mailto:hello@healthfirst.in">Contact</a>
+        <a href="admin.html">Admin</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="container">
+      <span>© 2026 HealthFirst. All rights reserved.</span>
+      <span>Made with ❤️ in India</span>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js?v=5"></script>
+</body>
+</html>

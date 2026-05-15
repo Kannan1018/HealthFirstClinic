@@ -25,7 +25,7 @@ const RAZORPAY_KEY = "rzp_test_SokQ6RRs3wd0oH";
    Firebase Console → Authentication → Users
    See SECURITY-SETUP.md for full instructions.
 ───────────────────────────────────────────── */
-const ADMIN_EMAIL = "kannan.ag10@gmail.com";
+const ADMIN_EMAIL = "REPLACE_WITH_YOUR_EMAIL@example.com";
 
 /* ─── Specialty catalog ─── */
 const SPECIALTIES = [
@@ -88,7 +88,7 @@ let firebaseReady = false;
 async function initFirebase() {
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-    const { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, where, serverTimestamp } =
+    const { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, setDoc, query, orderBy, where, serverTimestamp } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
@@ -96,7 +96,7 @@ async function initFirebase() {
     db = getFirestore(app);
     const auth = getAuth(app);
     firebaseReady = true;
-    window._fs = { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, where, serverTimestamp };
+    window._fs = { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, setDoc, query, orderBy, where, serverTimestamp };
     window._auth = { auth, signInWithEmailAndPassword, signOut };
     console.log("✅ Firebase connected");
     document.dispatchEvent(new Event("firebase-ready"));
@@ -112,34 +112,73 @@ initFirebase();
 /* ═══════════════════════════════════
    AUTH GATE — admin.html & doctor.html
 ═══════════════════════════════════ */
-function handleAuthStateChange(user) {
+async function handleAuthStateChange(user) {
   window._currentUser = user;
 
   const gate = document.getElementById("authGate");
   if (!gate) return; // page doesn't need auth
 
+  const requireWhat = gate.dataset.require || "admin"; // "admin" or "doctor"
   const content = document.getElementById("authedContent");
   const loading = document.getElementById("authLoading");
   const loginForm = document.getElementById("authLogin");
   const errEl = document.getElementById("loginError");
 
-  if (user && user.email === ADMIN_EMAIL) {
-    // Signed in as admin — show admin content
-    gate.style.display = "none";
-    if (content) content.style.display = "";
-    const emailEl = document.getElementById("authedEmail");
-    if (emailEl) emailEl.textContent = user.email;
-    document.dispatchEvent(new Event("admin-ready"));
-  } else if (user) {
-    // Signed in but wrong email — sign them out
-    if (errEl) errEl.textContent = "This account doesn't have admin access. Try a different email.";
-    window._auth.signOut(window._auth.auth);
-  } else {
-    // Not signed in — show login form
+  function showLogin() {
     if (loading) loading.style.display = "none";
     if (loginForm) loginForm.style.display = "";
     if (content) content.style.display = "none";
     gate.style.display = "";
+  }
+
+  function showContent() {
+    gate.style.display = "none";
+    if (content) content.style.display = "";
+  }
+
+  if (!user) {
+    showLogin();
+    return;
+  }
+
+  // Admin gate
+  if (requireWhat === "admin") {
+    if (user.email === ADMIN_EMAIL) {
+      const emailEl = document.getElementById("authedEmail");
+      if (emailEl) emailEl.textContent = user.email;
+      showContent();
+      document.dispatchEvent(new Event("admin-ready"));
+    } else {
+      if (errEl) errEl.textContent = "This account doesn't have admin access. Try a different email.";
+      window._auth.signOut(window._auth.auth);
+    }
+    return;
+  }
+
+  // Doctor gate (allows admin too, since admin should be able to view any dashboard)
+  if (requireWhat === "doctor") {
+    if (user.email === ADMIN_EMAIL) {
+      // Admin signed into doctor page — show admin-style dashboard with all data
+      window._currentDoctor = { email: user.email, name: "Admin", specialty: "All Doctors", avatar: "🛡️" };
+      const emailEl = document.getElementById("authedEmail");
+      if (emailEl) emailEl.textContent = user.email + " (admin)";
+      showContent();
+      document.dispatchEvent(new Event("doctor-ready"));
+      return;
+    }
+    // Doctor: check they exist in doctors collection by email
+    const docMatch = await loadDoctorByEmail(user.email);
+    if (docMatch) {
+      window._currentDoctor = docMatch;
+      const emailEl = document.getElementById("authedEmail");
+      if (emailEl) emailEl.textContent = user.email;
+      showContent();
+      document.dispatchEvent(new Event("doctor-ready"));
+    } else {
+      if (errEl) errEl.textContent = "This email isn't registered as a doctor. Contact your admin.";
+      window._auth.signOut(window._auth.auth);
+    }
+    return;
   }
 }
 
@@ -187,22 +226,51 @@ window.doAdminLogout = async function () {
 // ── Firebase helpers ──
 async function saveBooking(data) {
   if (!firebaseReady) return null;
-  const { collection, addDoc, serverTimestamp } = window._fs;
+  const { collection, addDoc, doc, setDoc, serverTimestamp } = window._fs;
   try {
-    // 1. Save full booking (admin-only readable — contains patient PII)
+    // 1. Save full booking (admin + doctor-only readable — contains patient PII)
     const ref = await addDoc(collection(db, "bookings"), { ...data, createdAt: serverTimestamp() });
-    // 2. Save lightweight slot record (publicly readable, no PII — used by booking page to show slot availability)
+
+    // 2. Save lightweight public slot record (used by booking page to show slot availability)
     try {
       await addDoc(collection(db, "bookedSlots"), {
         doctorDate: data.doctorDate,
         slot: data.slot,
         bookingId: ref.id,
+        doctorEmail: data.doctorEmail || "",
         status: "confirmed",
         createdAt: serverTimestamp()
       });
     } catch (slotErr) { console.warn("bookedSlots write failed:", slotErr); }
-    return ref.id;
+
+    // 3. Save patient-safe public lookup record (so patient can view their booking later via link)
+    const lookupToken = "tk_" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    try {
+      await setDoc(doc(db, "publicBookings", lookupToken), {
+        bookingId: ref.id,
+        patientNameMasked: maskName(data.patientName),
+        doctor: data.doctor,
+        specialty: data.specialty,
+        dateDisplay: data.dateDisplay,
+        date: data.date,
+        slot: data.slot,
+        token: data.token,
+        fee: data.fee,
+        paymentMethod: data.paymentMethod || "pay_at_clinic",
+        status: data.status || "confirmed",
+        createdAt: serverTimestamp()
+      });
+    } catch (pubErr) { console.warn("publicBookings write failed:", pubErr); }
+
+    return { id: ref.id, lookupToken };
   } catch (e) { console.error("saveBooking:", e); return null; }
+}
+
+function maskName(name) {
+  if (!name) return "Patient";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return parts[0] + " " + parts[parts.length - 1][0] + ".";
 }
 
 async function saveFeedback(data) {
@@ -224,6 +292,49 @@ async function loadBookings(filterDate) {
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (e) { console.error("loadBookings:", e); return []; }
+}
+
+/* Doctor-scoped bookings: only returns bookings where doctorEmail matches the given email.
+   The Firestore rule will only allow this query for that authenticated doctor. */
+async function loadMyBookingsAsDoctor(doctorEmail, filterDate) {
+  if (!firebaseReady) return [];
+  const { collection, getDocs, query, where } = window._fs;
+  try {
+    let q;
+    if (filterDate) {
+      q = query(collection(db, "bookings"),
+                where("doctorEmail", "==", doctorEmail),
+                where("date", "==", filterDate));
+    } else {
+      q = query(collection(db, "bookings"), where("doctorEmail", "==", doctorEmail));
+    }
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { console.error("loadMyBookingsAsDoctor:", e); return []; }
+}
+
+/* Find a doctor by email (used to identify the signed-in doctor) */
+async function loadDoctorByEmail(email) {
+  if (!firebaseReady || !email) return null;
+  const { collection, getDocs, query, where } = window._fs;
+  try {
+    const q = query(collection(db, "doctors"), where("email", "==", email));
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    const d = snap.docs[0];
+    return { id: d.id, ...d.data() };
+  } catch (e) { console.error("loadDoctorByEmail:", e); return null; }
+}
+
+/* Public booking lookup (for my-appointments page) — keyed by lookupToken (doc ID) */
+async function loadPublicBooking(lookupToken) {
+  if (!firebaseReady || !lookupToken) return null;
+  const { doc, getDoc } = window._fs;
+  try {
+    const snap = await getDoc(doc(db, "publicBookings", lookupToken));
+    if (!snap.exists()) return null;
+    return { lookupToken, ...snap.data() };
+  } catch (e) { console.error("loadPublicBooking:", e); return null; }
 }
 
 async function loadReviews() {
@@ -650,7 +761,14 @@ if (document.getElementById("docList")) {
   let selectedDateIdx = 0;
 
   window.selectDoc = function (cardEl, name, avatar, spec, fee, cred) {
-    selectedDoc = { name, avatar, spec, fee, cred };
+    // Look up full doctor record from cached list using data-docid (so we get email + id)
+    const docId = cardEl?.dataset?.docid;
+    const fullDoc = allDoctors.find(d => d.id === docId);
+    selectedDoc = {
+      id: docId,
+      email: fullDoc?.email || "",
+      name, avatar, spec, fee, cred
+    };
     document.getElementById("doctorListView").style.display = "none";
     document.getElementById("bookingPanel").style.display = "block";
     document.getElementById("successView").classList.remove("show");
@@ -819,19 +937,46 @@ if (document.getElementById("docList")) {
   }
 
   async function finalizeBooking(formData, status, paymentMethod, paymentDetails) {
-    const savedId = await saveBooking({
+    const result = await saveBooking({
       patientName: formData.name, phone: formData.phone, age: formData.age, gender: formData.gender,
-      reason: formData.reason, doctor: selectedDoc.name, specialty: selectedDoc.spec, fee: selectedDoc.fee,
+      reason: formData.reason,
+      doctor: selectedDoc.name, doctorEmail: selectedDoc.email || "", doctorId: selectedDoc.id || "",
+      specialty: selectedDoc.spec, fee: selectedDoc.fee,
       date: formData.dateKey, dateDisplay: formData.dateStr, slot: selectedSlot, token: formData.token,
       doctorDate: selectedDoc.name + "_" + formData.dateKey,
       status, paymentMethod, paymentDetails: paymentDetails || {}
     });
+    const savedId = result && result.id ? result.id : null;
+    const lookupToken = result && result.lookupToken ? result.lookupToken : null;
     completedBookingForFeedback = { bookingId: savedId, patientName: formData.name, doctor: selectedDoc.name, specialty: selectedDoc.spec };
+
+    // Save to browser localStorage so patient can see all their bookings on my-appointments.html
+    if (lookupToken) {
+      try {
+        const mine = JSON.parse(localStorage.getItem("hf_my_bookings") || "[]");
+        mine.unshift({
+          lookupToken,
+          doctor: selectedDoc.name,
+          specialty: selectedDoc.spec,
+          dateDisplay: formData.dateStr,
+          date: formData.dateKey,
+          slot: selectedSlot,
+          token: formData.token,
+          fee: selectedDoc.fee,
+          savedAt: new Date().toISOString()
+        });
+        localStorage.setItem("hf_my_bookings", JSON.stringify(mine.slice(0, 50)));
+      } catch (e) { /* localStorage may be unavailable in some browsers */ }
+    }
+
     const isPaid = paymentMethod === "paid_online";
     document.getElementById("bookingPanel").style.display = "none";
     const sv = document.getElementById("successView");
     sv.classList.add("show");
     document.getElementById("tokenNum").textContent = formData.token;
+
+    const myApptUrl = lookupToken ? `my-appointments.html?t=${lookupToken}` : "my-appointments.html";
+
     document.getElementById("successBody").innerHTML = `
       <strong>${escapeHtml(formData.name)}</strong>, your appointment with
       <strong>${escapeHtml(selectedDoc.name)}</strong> (${escapeHtml(selectedDoc.spec)}) is confirmed.<br><br>
@@ -842,9 +987,30 @@ if (document.getElementById("docList")) {
       📲 Confirmation sent to <strong>${escapeHtml(formData.phone)}</strong><br>
       ⏰ Please arrive 10 minutes before your slot.<br>
       🆔 Bring any previous prescriptions or reports.
+      ${lookupToken ? `
+      <div style="margin-top:20px;padding:14px 16px;background:var(--teal-l);border-radius:var(--r-lg);text-align:left">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:6px">📌 Save your booking link</div>
+        <div style="font-size:13px;color:var(--navy-m);margin-bottom:10px">View or share your appointment anytime — bookmark this link:</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a href="${myApptUrl}" class="btn-primary" style="font-size:13px;padding:8px 16px">📋 View My Appointment</a>
+          <button onclick="copyMyApptLink('${lookupToken}')" class="btn-ghost" style="font-size:13px;padding:8px 16px">📋 Copy Link</button>
+        </div>
+      </div>` : ""}
     `;
     sv.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  window.copyMyApptLink = function (token) {
+    const url = `${window.location.origin}${window.location.pathname.replace(/[^\/]*$/, "")}my-appointments.html?t=${token}`;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(
+        () => alert("✅ Link copied! Save it somewhere safe — bookmark, notes app, or WhatsApp it to yourself."),
+        () => prompt("Copy this link manually:", url)
+      );
+    } else {
+      prompt("Copy this link manually:", url);
+    }
+  };
 
   window.bookAnother = function () {
     document.getElementById("successView").classList.remove("show");
@@ -870,14 +1036,27 @@ if (document.getElementById("docList")) {
 }
 
 /* ═══════════════════════════════════
-   DOCTOR DASHBOARD
+   DOCTOR DASHBOARD — scoped to signed-in doctor
 ═══════════════════════════════════ */
 if (document.getElementById("queue-upcoming")) {
-  document.addEventListener("admin-ready", loadTodayQueue);
+  document.addEventListener("doctor-ready", loadTodayQueue);
 
   async function loadTodayQueue() {
     const today = new Date().toISOString().split("T")[0];
-    const bookings = await loadBookings(today);
+    const me = window._currentDoctor || {};
+    const isAdmin = (me.email === ADMIN_EMAIL);
+
+    // Update sidebar info to reflect current doctor
+    const setText = (sel, val) => { const el = document.querySelector(sel); if (el) el.textContent = val; };
+    setText(".sb-avatar", me.avatar || (isAdmin ? "🛡️" : "👨‍⚕️"));
+    setText(".sb-name", me.name || "Doctor");
+    setText(".sb-spec", me.specialty || (isAdmin ? "Admin view — all doctors" : ""));
+
+    // Load bookings: admin sees all, doctor sees only their own
+    const bookings = isAdmin
+      ? await loadBookings(today)
+      : await loadMyBookingsAsDoctor(me.email, today);
+
     const container = document.getElementById("queue-upcoming");
 
     if (bookings.length === 0) {
@@ -968,6 +1147,7 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
               <div class="ai-info">
                 <div class="ai-name">${escapeHtml(d.name)}</div>
                 <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
+                <div class="ai-detail" style="margin-top:3px;font-size:11px">${d.email ? "🔑 " + escapeHtml(d.email) : "<span style='color:var(--amber)'>⚠️ No login email — add one</span>"}</div>
               </div>
               <button class="ai-btn cancel" onclick="removeDoctorAdmin('${d.id}','${escapeHtml(d.name).replace(/'/g, "\\'")}')">Remove</button>
             </div>`).join("");
@@ -1022,6 +1202,7 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     const get = id => document.getElementById(id)?.value.trim();
     const data = {
       name: get("ndName"),
+      email: (get("ndEmail") || "").toLowerCase(),
       specialty: get("ndSpecialty"),
       specialtyCategory: get("ndCategory"),
       qualification: get("ndQual"),
@@ -1030,14 +1211,18 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
       city: get("ndCity"),
       avatar: get("ndAvatar") || "👨‍⚕️"
     };
-    if (!data.name || !data.specialty || !data.fee) {
-      alert("Please fill in at least: Name, Specialty, and Fee.");
+    if (!data.name || !data.email || !data.specialty || !data.fee) {
+      alert("Please fill in at least: Name, Email, Specialty, and Fee.\n\nThe email is the doctor's login email — you'll create their Firebase Auth account separately.");
+      return;
+    }
+    if (!data.email.includes("@") || !data.email.includes(".")) {
+      alert("Please enter a valid email address.");
       return;
     }
     const id = await saveDoctor(data);
     if (id) {
-      alert(`✅ Dr. ${data.name} added successfully!`);
-      ["ndName","ndSpecialty","ndQual","ndExp","ndFee","ndCity","ndAvatar"].forEach(f => {
+      alert(`✅ Dr. ${data.name} added.\n\n⚠️ NEXT STEP: Go to Firebase Console → Authentication → Add user → create login for ${data.email}, then share the password with the doctor on WhatsApp.`);
+      ["ndName","ndEmail","ndSpecialty","ndQual","ndExp","ndFee","ndCity","ndAvatar"].forEach(f => {
         const el = document.getElementById(f); if (el) el.value = "";
       });
       loadAdminData();
@@ -1236,6 +1421,145 @@ if (document.getElementById("doctorApplicationForm")) {
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Submit Application →"; }
     }
     return false;
+  };
+}
+
+/* ═══════════════════════════════════
+   MY APPOINTMENTS PAGE
+═══════════════════════════════════ */
+if (document.getElementById("myAppointmentsList")) {
+  document.addEventListener("firebase-ready", initMyAppointments);
+  if (firebaseReady) initMyAppointments();
+
+  async function initMyAppointments() {
+    const list = document.getElementById("myAppointmentsList");
+    const empty = document.getElementById("myAppointmentsEmpty");
+    if (!list) return;
+
+    // 1. Check URL for ?t=<lookupToken>
+    const urlToken = getParam("t");
+    let bookings = [];
+
+    // 2. Pull saved tokens from localStorage
+    let saved = [];
+    try {
+      saved = JSON.parse(localStorage.getItem("hf_my_bookings") || "[]");
+    } catch (e) { saved = []; }
+
+    // 3. If URL has a token, fetch fresh data and add to saved (if not already there)
+    if (urlToken) {
+      const fresh = await loadPublicBooking(urlToken);
+      if (fresh) {
+        if (!saved.find(s => s.lookupToken === urlToken)) {
+          saved.unshift({
+            lookupToken: urlToken,
+            doctor: fresh.doctor,
+            specialty: fresh.specialty,
+            dateDisplay: fresh.dateDisplay,
+            date: fresh.date,
+            slot: fresh.slot,
+            token: fresh.token,
+            fee: fresh.fee,
+            savedAt: new Date().toISOString()
+          });
+          try { localStorage.setItem("hf_my_bookings", JSON.stringify(saved.slice(0, 50))); } catch (e) {}
+        }
+      } else {
+        // Token in URL is invalid or expired
+        list.innerHTML = `
+          <div style="text-align:center;padding:40px 24px;background:white;border-radius:var(--r-xl);border:1px solid var(--border)">
+            <div style="font-size:48px;margin-bottom:14px">⚠️</div>
+            <h3 style="font-family:var(--ff-d);font-size:22px;color:var(--navy);margin-bottom:8px">Booking not found</h3>
+            <p style="color:var(--navy-m);font-size:15px;margin-bottom:18px">The link may have expired or been mistyped. Try checking your saved bookings below.</p>
+          </div>`;
+      }
+    }
+
+    // 4. Try to fetch fresh data for each saved booking (so status reflects updates)
+    bookings = await Promise.all(saved.map(async (s) => {
+      const fresh = await loadPublicBooking(s.lookupToken);
+      return fresh ? { ...s, ...fresh } : s;
+    }));
+
+    // Render
+    if (bookings.length === 0) {
+      if (empty) empty.style.display = "";
+      list.style.display = "none";
+      return;
+    }
+    if (empty) empty.style.display = "none";
+    list.style.display = "";
+
+    // Sort by date (upcoming first, then past)
+    const today = new Date().toISOString().split("T")[0];
+    bookings.sort((a, b) => {
+      const aDate = a.date || "";
+      const bDate = b.date || "";
+      const aUpcoming = aDate >= today;
+      const bUpcoming = bDate >= today;
+      if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+      return aUpcoming ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate);
+    });
+
+    list.innerHTML = bookings.map(b => {
+      const isUpcoming = (b.date || "") >= today;
+      const status = b.status || "confirmed";
+      const statusColor = status === "cancelled" ? "var(--red)" : (status === "done" ? "var(--navy-m)" : "var(--green)");
+      const statusLabel = status === "cancelled" ? "Cancelled" : (status === "done" ? "Completed" : (isUpcoming ? "Upcoming" : "Past"));
+
+      return `
+        <div style="background:white;border-radius:var(--r-xl);padding:24px;border:1px solid var(--border);margin-bottom:16px;${status === "cancelled" ? "opacity:0.7" : ""}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+            <div>
+              <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${escapeHtml(b.doctor || "—")}</div>
+              <div style="font-size:14px;color:var(--teal);font-weight:600;margin-top:3px">${escapeHtml(b.specialty || "")}</div>
+            </div>
+            <span style="background:${statusColor};color:white;padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap">${statusLabel}</span>
+          </div>
+          <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--navy-s);line-height:1.6;padding-top:14px;border-top:1px solid var(--border)">
+            <div><strong>📅</strong> ${escapeHtml(b.dateDisplay || b.date || "—")}</div>
+            <div><strong>⏰</strong> ${escapeHtml(b.slot || "—")}</div>
+            <div><strong>🆔</strong> Token ${escapeHtml(b.token || "—")}</div>
+            <div><strong>💰</strong> ₹${escapeHtml(b.fee || "—")}</div>
+          </div>
+          <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="copyMyApptLink('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px">🔗 Copy link</button>
+            <button onclick="removeMyAppt('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px;color:var(--navy-m)">🗑 Remove from this device</button>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  window.copyMyApptLink = function (token) {
+    const url = `${window.location.origin}${window.location.pathname.replace(/[^\/]*$/, "")}my-appointments.html?t=${token}`;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(
+        () => alert("✅ Link copied!"),
+        () => prompt("Copy this link manually:", url)
+      );
+    } else {
+      prompt("Copy this link manually:", url);
+    }
+  };
+
+  window.removeMyAppt = function (token) {
+    if (!confirm("Remove this booking from your device?\n\nThis only removes it from this browser — your actual appointment is NOT cancelled. To cancel, contact us directly.")) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem("hf_my_bookings") || "[]");
+      const filtered = saved.filter(s => s.lookupToken !== token);
+      localStorage.setItem("hf_my_bookings", JSON.stringify(filtered));
+    } catch (e) {}
+    location.reload();
+  };
+
+  window.checkLookupCode = async function () {
+    const code = document.getElementById("lookupCode")?.value.trim();
+    if (!code) { alert("Please paste a booking link or code."); return; }
+    // Extract token from URL or use directly
+    let token = code;
+    const match = code.match(/[?&]t=([^&\s]+)/);
+    if (match) token = match[1];
+    window.location.href = `my-appointments.html?t=${encodeURIComponent(token)}`;
   };
 }
 
