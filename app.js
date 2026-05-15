@@ -143,22 +143,28 @@ async function handleAuthStateChange(user) {
 
   // Admin gate
   if (requireWhat === "admin") {
-    if (user.email === ADMIN_EMAIL) {
+    const userEmail = (user.email || "").trim().toLowerCase();
+    const adminEmail = (ADMIN_EMAIL || "").trim().toLowerCase();
+    if (userEmail === adminEmail) {
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email;
       showContent();
       document.dispatchEvent(new Event("admin-ready"));
     } else {
-      if (errEl) errEl.textContent = "This account doesn't have admin access. Try a different email.";
+      console.error("❌ Admin email mismatch:");
+      console.error("   Signed-in email:", JSON.stringify(user.email));
+      console.error("   ADMIN_EMAIL in app.js:", JSON.stringify(ADMIN_EMAIL));
+      if (errEl) errEl.textContent = "This account doesn't have admin access. Open browser console (F12) to see what's mismatched.";
       window._auth.signOut(window._auth.auth);
     }
     return;
   }
 
-  // Doctor gate (allows admin too, since admin should be able to view any dashboard)
+  // Doctor gate (allows admin too)
   if (requireWhat === "doctor") {
-    if (user.email === ADMIN_EMAIL) {
-      // Admin signed into doctor page — show admin-style dashboard with all data
+    const userEmail = (user.email || "").trim().toLowerCase();
+    const adminEmail = (ADMIN_EMAIL || "").trim().toLowerCase();
+    if (userEmail === adminEmail) {
       window._currentDoctor = { email: user.email, name: "Admin", specialty: "All Doctors", avatar: "🛡️" };
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email + " (admin)";
@@ -166,8 +172,7 @@ async function handleAuthStateChange(user) {
       document.dispatchEvent(new Event("doctor-ready"));
       return;
     }
-    // Doctor: check they exist in doctors collection by email
-    const docMatch = await loadDoctorByEmail(user.email);
+    const docMatch = await loadDoctorByEmail(userEmail);
     if (docMatch) {
       window._currentDoctor = docMatch;
       const emailEl = document.getElementById("authedEmail");
@@ -175,6 +180,7 @@ async function handleAuthStateChange(user) {
       showContent();
       document.dispatchEvent(new Event("doctor-ready"));
     } else {
+      console.error("❌ No doctor found with email:", user.email);
       if (errEl) errEl.textContent = "This email isn't registered as a doctor. Contact your admin.";
       window._auth.signOut(window._auth.auth);
     }
