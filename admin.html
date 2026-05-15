@@ -3,10 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin Panel — HealthFirst Clinic</title>
+<title>Admin Panel — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<style>
+  .admin-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px 20px; }
+  .admin-form .field-full { grid-column: 1 / -1; }
+  .admin-form label { display: block; font-size: 12px; font-weight: 600; color: var(--navy-m); margin-bottom: 5px; letter-spacing: 0.2px; }
+  .admin-form input, .admin-form select {
+    width: 100%; padding: 9px 12px; border: 1.5px solid var(--border-md); border-radius: var(--r);
+    font-size: 14px; font-family: var(--ff); color: var(--navy); background: var(--bg); outline: none;
+    transition: border-color .15s;
+  }
+  .admin-form input:focus, .admin-form select:focus { border-color: var(--teal); background: white; }
+  .admin-form .submit-btn { grid-column: 1 / -1; margin-top: 6px; }
+</style>
 </head>
 <body>
 
@@ -38,10 +50,9 @@
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div>
         <div class="admin-title">Admin Dashboard</div>
-        <div class="admin-sub">HealthFirst Clinic · Indore · <span id="adminDate"></span></div>
+        <div class="admin-sub">HealthFirst Platform · <span id="adminDate"></span></div>
       </div>
       <div style="display:flex;gap:10px">
-        <button class="btn-ghost" onclick="window.print()">🖨 Export Report</button>
         <a href="book.html" class="btn-primary">View Booking Page</a>
       </div>
     </div>
@@ -52,22 +63,22 @@
     <div class="big-kpi accent">
       <div class="bk-val" id="adminRevenue">Loading...</div>
       <div class="bk-label">Revenue this month</div>
-      <div class="bk-delta">↑ 28% vs last month</div>
+      <div class="bk-delta">From online payments</div>
     </div>
     <div class="big-kpi">
       <div class="bk-val" id="adminTotalBookings">...</div>
       <div class="bk-label">Appointments this month</div>
-      <div class="bk-delta up">↑ 19% growth</div>
+      <div class="bk-delta up">Live data</div>
     </div>
     <div class="big-kpi">
-      <div class="bk-val">94%</div>
-      <div class="bk-label">Appointment fill rate</div>
-      <div class="bk-delta up">↑ 4% vs last month</div>
+      <div class="bk-val" id="adminDocCount">...</div>
+      <div class="bk-label">Doctors on platform</div>
+      <div class="bk-delta up">Active listings</div>
     </div>
     <div class="big-kpi">
-      <div class="bk-val">4.8 ★</div>
-      <div class="bk-label">Average clinic rating</div>
-      <div class="bk-delta dn">↓ 0.1 this month</div>
+      <div class="bk-val" id="adminAvgRating">...</div>
+      <div class="bk-label">Avg patient rating</div>
+      <div class="bk-delta up">From verified reviews</div>
     </div>
   </div>
 
@@ -75,152 +86,126 @@
     <!-- LEFT COLUMN -->
     <div style="display:flex;flex-direction:column;gap:20px">
 
-      <!-- Doctor performance table -->
+      <!-- MANAGE DOCTORS -->
       <div class="panel">
         <div class="panel-head">
-          <div class="panel-title">Doctor Performance — May 2026</div>
-          <span class="adm-badge" style="background:var(--teal-l);color:var(--teal);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px">12 doctors</span>
+          <div class="panel-title">Manage Doctors</div>
+          <span class="adm-badge" style="background:var(--teal-l);color:var(--teal);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px"><span id="docCount">0</span> active</span>
         </div>
-        <div id="doctorPerformanceTable">
-          <div class="doc-table-row">
-            <div class="dtr-rank">#1</div>
-            <div class="dtr-ava">👩‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Priya Sharma</div><div class="dtr-spec">General Physician</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">284</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.9★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹1.13L</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill sp-active">Active</span>
-            </div>
-          </div>
-          <div class="doc-table-row">
-            <div class="dtr-rank">#2</div>
-            <div class="dtr-ava">👩‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Meena Agarwal</div><div class="dtr-spec">Gynecologist</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">308</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.9★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹1.38L</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill sp-active">Active</span>
-            </div>
-          </div>
-          <div class="doc-table-row">
-            <div class="dtr-rank">#3</div>
-            <div class="dtr-ava">👩‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Suman Verma</div><div class="dtr-spec">Cardiologist</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">142</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.8★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹1.42L</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill sp-active">Active</span>
-            </div>
-          </div>
-          <div class="doc-table-row">
-            <div class="dtr-rank">#4</div>
-            <div class="dtr-ava">👨‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Rahul Mehta</div><div class="dtr-spec">General Physician</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">196</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.7★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹98K</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill sp-active">Active</span>
-            </div>
-          </div>
-          <div class="doc-table-row">
-            <div class="dtr-rank">#5</div>
-            <div class="dtr-ava">👨‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Ramesh Singh</div><div class="dtr-spec">Orthopedic Surgeon</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">176</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.7★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹1.05L</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill sp-active">Active</span>
-            </div>
-          </div>
-          <div class="doc-table-row">
-            <div class="dtr-rank">#6</div>
-            <div class="dtr-ava">👩‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Neha Joshi</div><div class="dtr-spec">Dermatologist</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">211</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.8★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹89K</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill sp-active">Active</span>
-            </div>
-          </div>
-          <div class="doc-table-row">
-            <div class="dtr-rank">#7</div>
-            <div class="dtr-ava">👨‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Arjun Patel</div><div class="dtr-spec">Pediatrician</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">98</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.6★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹71K</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill" style="background:var(--amber-l);color:#92400E">On Leave</span>
-            </div>
-          </div>
-          <div class="doc-table-row">
-            <div class="dtr-rank">#8</div>
-            <div class="dtr-ava">👨‍⚕️</div>
-            <div class="dtr-info"><div class="dtr-name">Dr. Sunil Thakur</div><div class="dtr-spec">ENT Specialist</div></div>
-            <div class="dtr-stats">
-              <div class="dtr-stat"><div class="dts-val">134</div><div class="dts-label">Patients</div></div>
-              <div class="dtr-stat"><div class="dts-val">4.6★</div><div class="dts-label">Rating</div></div>
-              <div class="dtr-stat"><div class="dts-val">₹65K</div><div class="dts-label">Revenue</div></div>
-              <span class="status-pill sp-active">Active</span>
-            </div>
-          </div>
+        <div id="docManageList">
+          <div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading doctors...</div>
         </div>
       </div>
 
-      <!-- Recent bookings -->
+      <!-- ADD DOCTOR FORM -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">+ Add New Doctor</div>
+          <span style="font-size:12px;color:var(--navy-m)">Goes live instantly</span>
+        </div>
+        <div class="admin-form">
+          <div class="field-full">
+            <label>Doctor Name *</label>
+            <input type="text" id="ndName" placeholder="Dr. Anita Sharma">
+          </div>
+
+          <div>
+            <label>Specialty Category *</label>
+            <select id="ndCategory">
+              <option value="General">General Medicine</option>
+              <option value="Cardiology">Cardiology</option>
+              <option value="Pediatrics">Pediatrics</option>
+              <option value="Dermatology">Dermatology</option>
+              <option value="Ortho">Orthopedics</option>
+              <option value="Gynecology">Gynecology</option>
+              <option value="ENT">ENT</option>
+              <option value="Ophthalmology">Ophthalmology</option>
+              <option value="Dental">Dental</option>
+              <option value="Psychiatry">Psychiatry</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Specialty Display Text *</label>
+            <input type="text" id="ndSpecialty" placeholder="General Physician">
+          </div>
+
+          <div>
+            <label>Qualification</label>
+            <input type="text" id="ndQual" placeholder="MBBS, MD">
+          </div>
+
+          <div>
+            <label>Experience</label>
+            <input type="text" id="ndExp" placeholder="12 years experience">
+          </div>
+
+          <div>
+            <label>Consultation Fee (₹) *</label>
+            <input type="number" id="ndFee" placeholder="500" min="0">
+          </div>
+
+          <div>
+            <label>City</label>
+            <input type="text" id="ndCity" placeholder="Delhi">
+          </div>
+
+          <div class="field-full">
+            <label>Avatar Emoji</label>
+            <input type="text" id="ndAvatar" placeholder="👨‍⚕️ or 👩‍⚕️" maxlength="4">
+          </div>
+
+          <button class="btn-primary submit-btn" onclick="adminAddDoctor()">Add Doctor to Platform</button>
+        </div>
+      </div>
+
+      <!-- RECENT BOOKINGS -->
       <div class="panel">
         <div class="panel-head">
           <div class="panel-title">Recent Bookings</div>
           <span style="font-size:12px;color:var(--navy-m)">Live feed</span>
         </div>
-        <div id="recentBookingsTable"><div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading bookings from database...</div></div>
+        <div id="recentBookingsTable"><div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading bookings...</div></div>
       </div>
     </div>
 
     <!-- RIGHT COLUMN -->
     <div style="display:flex;flex-direction:column;gap:20px">
 
-      <!-- Revenue by specialty -->
+      <!-- DOCTOR APPLICATIONS -->
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Revenue by Specialty</div></div>
-        <div class="rev-bars">
-          <div class="rb-row"><span class="rb-label">General</span><div class="rb-track"><div class="rb-fill" style="width:82%"></div></div><span class="rb-val">₹1.1L</span></div>
-          <div class="rb-row"><span class="rb-label">Cardiology</span><div class="rb-track"><div class="rb-fill" style="width:100%"></div></div><span class="rb-val">₹1.42L</span></div>
-          <div class="rb-row"><span class="rb-label">Gynecology</span><div class="rb-track"><div class="rb-fill" style="width:97%"></div></div><span class="rb-val">₹1.38L</span></div>
-          <div class="rb-row"><span class="rb-label">Ortho</span><div class="rb-track"><div class="rb-fill" style="width:74%"></div></div><span class="rb-val">₹1.05L</span></div>
-          <div class="rb-row"><span class="rb-label">Dermatology</span><div class="rb-track"><div class="rb-fill" style="width:63%"></div></div><span class="rb-val">₹89K</span></div>
-          <div class="rb-row"><span class="rb-label">Pediatrics</span><div class="rb-track"><div class="rb-fill" style="width:50%"></div></div><span class="rb-val">₹71K</span></div>
-          <div class="rb-row"><span class="rb-label">ENT</span><div class="rb-track"><div class="rb-fill" style="width:46%"></div></div><span class="rb-val">₹65K</span></div>
+        <div class="panel-head">
+          <div class="panel-title">Doctor Applications</div>
+          <span class="adm-badge" style="background:var(--amber-l);color:var(--amber);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px"><span id="appCount">0</span> pending</span>
+        </div>
+        <div id="docApplications">
+          <div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading applications...</div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--navy-m)">
+          💡 Doctors submit these via the <a href="for-doctors.html" style="color:var(--teal);font-weight:600">For Doctors</a> page. Review their info, then add approved ones using the form on the left.
         </div>
       </div>
 
-      <!-- Daily stats -->
+      <!-- QUICK GUIDE -->
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Today's Clinic Stats</div></div>
-        <div style="padding:0">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Total appointments today</span><span style="font-size:15px;font-weight:700;color:var(--navy)">68</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Completed</span><span style="font-size:15px;font-weight:700;color:var(--green)">41</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">In progress</span><span style="font-size:15px;font-weight:700;color:var(--amber)">12</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Upcoming</span><span style="font-size:15px;font-weight:700;color:var(--blue)">15</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--navy-m)">Cancelled / No-show</span><span style="font-size:15px;font-weight:700;color:var(--red)">8</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px"><span style="font-size:13px;color:var(--navy-m)">Today's revenue (so far)</span><span style="font-size:15px;font-weight:700;color:var(--teal)">₹24,800</span></div>
+        <div class="panel-head"><div class="panel-title">Quick Guide</div></div>
+        <div style="padding:18px 20px;font-size:13px;line-height:1.7;color:var(--navy-m)">
+          <div style="margin-bottom:14px"><strong style="color:var(--navy)">Adding a doctor</strong><br>Fill the form on the left. Once added, they appear instantly on the home page and booking page.</div>
+          <div style="margin-bottom:14px"><strong style="color:var(--navy)">Doctor applications</strong><br>New doctor signups land in the panel above. Reach out to verify their credentials, then add them.</div>
+          <div style="margin-bottom:14px"><strong style="color:var(--navy)">Removing a doctor</strong><br>Use the Remove button in the Manage Doctors list. Past bookings stay safe.</div>
+          <div><strong style="color:var(--navy)">Bookings & reviews</strong><br>All data is live from Firebase. Patients book → it shows up here. They rate → reviews appear on the homepage.</div>
         </div>
       </div>
 
-      <!-- Quick actions -->
+      <!-- LINKS -->
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">Quick Actions</div></div>
+        <div class="panel-head"><div class="panel-title">Quick Links</div></div>
         <div style="padding:16px;display:flex;flex-direction:column;gap:8px">
-          <button class="btn-primary" style="width:100%;text-align:center;justify-content:center" onclick="alert('Add Doctor form would open here')">+ Add New Doctor</button>
-          <button class="btn-ghost" style="width:100%;text-align:center;justify-content:center" onclick="alert('Clinic schedule settings would open here')">📅 Manage Clinic Schedule</button>
-          <button class="btn-ghost" style="width:100%;text-align:center;justify-content:center" onclick="alert('SMS broadcast tool would open here')">📱 Send SMS Broadcast</button>
-          <button class="btn-ghost" style="width:100%;text-align:center;justify-content:center" onclick="window.print()">📊 Download Monthly Report</button>
+          <a href="index.html" class="btn-ghost" style="width:100%;text-align:center;justify-content:center">🌐 View Public Site</a>
+          <a href="book.html" class="btn-ghost" style="width:100%;text-align:center;justify-content:center">📅 View Booking Page</a>
+          <a href="doctor.html" class="btn-ghost" style="width:100%;text-align:center;justify-content:center">👨‍⚕️ Doctor Dashboard</a>
+          <a href="for-doctors.html" class="btn-ghost" style="width:100%;text-align:center;justify-content:center">📋 For Doctors Page</a>
         </div>
       </div>
     </div>
