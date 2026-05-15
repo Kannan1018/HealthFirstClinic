@@ -355,6 +355,15 @@
           <input type="tel" id="appPhone" placeholder="9876543210" maxlength="10" required>
         </div>
         <div class="apply-field">
+          <label>Clinic Phone Number <span class="req">*</span></label>
+          <input type="tel" id="appClinicPhone" placeholder="011-23456789 or 9876543210" maxlength="15" required>
+        </div>
+
+        <div class="apply-field">
+          <label>Consultation Fee (₹) <span class="req">*</span></label>
+          <input type="number" id="appConsultationFee" placeholder="500" min="50" max="50000" required>
+        </div>
+        <div class="apply-field">
           <label>Specialty <span class="req">*</span></label>
           <select id="appSpecialty" onchange="onSpecialtyChange()" required>
             <option value="">Select your specialty</option>
@@ -402,6 +411,11 @@
         <div class="apply-field full" id="appOtherCityWrap" style="display:none">
           <label>Please specify your city <span class="req">*</span></label>
           <input type="text" id="appOtherCity" placeholder="Your city name">
+        </div>
+
+        <div class="apply-field full">
+          <label>Clinic Name / Address <span style="font-weight:400;color:var(--navy-m);font-size:11px">(optional but helpful for patients)</span></label>
+          <input type="text" id="appClinicAddress" placeholder="e.g., Apollo Clinic, Plot 14 Vijay Nagar, Indore">
         </div>
 
         <div class="apply-field full">
@@ -500,6 +514,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
