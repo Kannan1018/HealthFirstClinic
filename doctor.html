@@ -46,6 +46,7 @@
       <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" onkeypress="if(event.key==='Enter')doAdminLogin()">
       <button class="auth-submit" id="loginBtn" onclick="doAdminLogin()">Sign In</button>
       <div id="loginError" class="auth-error"></div>
+      <a href="javascript:doForgotPassword()" class="auth-back" style="display:block;margin-top:14px">🔑 Forgot password?</a>
       <a href="index.html" class="auth-back">← Back to public site</a>
     </div>
   </div>
@@ -367,29 +368,26 @@
 
     <!-- SCHEDULE SECTION -->
     <div id="section-schedule" style="display:none">
-      <div class="panel" style="max-width:680px">
-        <div class="panel-head"><div class="panel-title">📅 My Weekly Schedule</div><button class="btn-primary" style="font-size:13px;padding:7px 16px">Edit Schedule</button></div>
-        <div style="padding:20px">
-          <table style="width:100%;border-collapse:collapse;font-size:14px">
-            <thead>
-              <tr style="border-bottom:2px solid var(--border)">
-                <th style="text-align:left;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Day</th>
-                <th style="text-align:left;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Morning</th>
-                <th style="text-align:left;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Afternoon</th>
-                <th style="text-align:center;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Max Patients</th>
-                <th style="text-align:center;padding:10px 12px;color:var(--navy-m);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Status</th>
-              </tr>
-            </thead>
-            <tbody id="scheduleTable">
-              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Monday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
-              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Tuesday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
-              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Wednesday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;text-align:center;font-weight:600">10</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
-              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Thursday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
-              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Friday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 1:00 PM</td><td style="padding:12px;color:var(--navy-m)">2:00 PM – 6:00 PM</td><td style="padding:12px;text-align:center;font-weight:600">20</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
-              <tr style="border-bottom:1px solid var(--border)"><td style="padding:12px;font-weight:600;color:var(--navy)">Saturday</td><td style="padding:12px;color:var(--navy-m)">9:00 AM – 2:00 PM</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;text-align:center;font-weight:600">14</td><td style="padding:12px;text-align:center"><span class="status-pill sp-active">Active</span></td></tr>
-              <tr><td style="padding:12px;font-weight:600;color:var(--navy)">Sunday</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;color:var(--navy-m)">—</td><td style="padding:12px;text-align:center;font-weight:600">—</td><td style="padding:12px;text-align:center"><span class="status-pill" style="background:var(--red-l);color:#991B1B">Off</span></td></tr>
-            </tbody>
-          </table>
+      <div class="panel" style="max-width:880px">
+        <div class="panel-head">
+          <div class="panel-title">📅 My Schedule — Set Your Available Time Slots</div>
+          <button class="btn-primary" id="saveScheduleBtn" style="font-size:13px;padding:7px 16px" onclick="saveMySchedule()">💾 Save Schedule</button>
+        </div>
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--navy-m);line-height:1.6">
+          Tick the time slots you're available on each day of the week. Patients will only be able to book the slots you've ticked. Changes apply to all future bookings.
+        </div>
+        <div id="scheduleEditor" style="padding:18px 20px">
+          <div style="text-align:center;color:var(--navy-m);padding:24px">⏳ Loading your schedule...</div>
+        </div>
+
+        <div style="padding:0 20px 20px;border-top:1px solid var(--border);margin-top:8px;padding-top:18px">
+          <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--navy);margin-bottom:8px">🚫 Blocked Dates (one-time leaves)</div>
+          <div style="font-size:13px;color:var(--navy-m);margin-bottom:12px">Add specific dates you'll be unavailable (vacation, conferences, etc.). On these days, no bookings can be made.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <input type="date" id="newBlockedDate" style="padding:9px 12px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
+            <button class="btn-primary" style="font-size:13px;padding:9px 18px" onclick="addBlockedDate()">+ Block Date</button>
+          </div>
+          <div id="blockedDatesList"></div>
         </div>
       </div>
     </div>
@@ -435,7 +433,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=11"></script>
 <script>
   // Set today's date
   const d = new Date();

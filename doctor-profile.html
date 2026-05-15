@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doctor Profile — HealthFirst</title>
+<meta name="description" content="View a doctor's full profile on HealthFirst — qualifications, experience, reviews, and book an appointment instantly.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  @media (max-width: 880px) {
+    #doctorProfileWrap > div { grid-template-columns: 1fr !important; }
+    #doctorProfileWrap > div > div:first-child { position: static !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav id="mainNav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">🏥</span>
+      <span class="logo-text">HealthFirst</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html#doctors" data-i18n="nav.doctors">Doctors</a></li>
+      <li><a href="index.html#specialties" data-i18n="nav.specialties">Specialties</a></li>
+      <li><a href="my-appointments.html" data-i18n="nav.my_appointments">My Appointments</a></li>
+      <li><a href="for-doctors.html" data-i18n="nav.for_doctors">For Doctors</a></li>
+    </ul>
+    <div class="nav-actions">
+      <select id="langPicker" onchange="switchLang(this.value)" style="padding:6px 8px;border:1.5px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:12px;background:white;outline:none;margin-right:8px;cursor:pointer">
+        <option value="en">English</option>
+        <option value="hi">हिंदी</option>
+      </select>
+      <a href="book.html" class="btn-primary nav-book" data-i18n="nav.book_appointment">Book Appointment</a>
+      <button class="burger" id="burger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="index.html#doctors" data-i18n="nav.doctors">Doctors</a>
+    <a href="index.html#specialties" data-i18n="nav.specialties">Specialties</a>
+    <a href="my-appointments.html" data-i18n="nav.my_appointments">My Appointments</a>
+    <a href="for-doctors.html" data-i18n="nav.for_doctors">For Doctors</a>
+    <a href="book.html" class="btn-primary" style="text-align:center;margin-top:8px" data-i18n="nav.book_appointment">Book Appointment</a>
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="ph-inner">
+    <a href="javascript:history.back()" class="ph-back">← Back</a>
+    <div class="ph-title">Doctor Profile</div>
+  </div>
+</div>
+
+<div class="container" style="padding-top:32px;padding-bottom:80px">
+  <div id="doctorProfileWrap">
+    <div style="text-align:center;padding:60px 24px;color:var(--navy-m)">⏳ Loading doctor profile...</div>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <div class="logo" style="margin-bottom:12px"><span class="logo-icon">🏥</span><span class="logo-text">HealthFirst</span></div>
+      <p>India's doctor booking platform.</p>
+    </div>
+    <div class="footer-links">
+      <div class="fl-col">
+        <div class="fl-title">For Patients</div>
+        <a href="book.html">Book Appointment</a>
+        <a href="my-appointments.html">My Appointments</a>
+        <a href="index.html#doctors">Browse Doctors</a>
+      </div>
+      <div class="fl-col">
+        <div class="fl-title">For Doctors</div>
+        <a href="for-doctors.html">Why HealthFirst</a>
+        <a href="doctor.html">Doctor Login</a>
+      </div>
+      <div class="fl-col">
+        <div class="fl-title">Company</div>
+        <a href="mailto:hello@healthfirst.in">Contact</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="container">
+      <span>© 2026 HealthFirst. All rights reserved.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js?v=11"></script>
+</body>
+</html>

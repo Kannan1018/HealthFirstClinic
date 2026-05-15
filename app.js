@@ -71,6 +71,142 @@ function mapSpecialtyToKey(displayName) {
   return SPECIALTY_DISPLAY_TO_KEY[displayName] || "Other";
 }
 
+/* ─── Global time slot pool & default weekly schedule ─── */
+const ALL_SLOTS = [
+  "9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
+  "12:00 PM","12:30 PM",
+  "2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM","5:30 PM",
+  "6:00 PM","6:30 PM","7:00 PM","7:30 PM","8:00 PM"
+];
+
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+function defaultWeeklyPattern() {
+  // Default: working Mon-Sat with morning + evening sessions; Sun off
+  const standardSlots = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
+                         "5:00 PM","5:30 PM","6:00 PM","6:30 PM","7:00 PM","7:30 PM"];
+  return {
+    "0": [],
+    "1": [...standardSlots],
+    "2": [...standardSlots],
+    "3": [...standardSlots],
+    "4": [...standardSlots],
+    "5": [...standardSlots],
+    "6": [...standardSlots]
+  };
+}
+
+/* ═══════════════════════════════════
+   i18n — Simple multi-language support
+═══════════════════════════════════ */
+const TRANSLATIONS = {
+  en: {
+    "nav.doctors": "Doctors",
+    "nav.specialties": "Specialties",
+    "nav.how_it_works": "How it works",
+    "nav.for_doctors": "For Doctors",
+    "nav.my_appointments": "My Appointments",
+    "nav.book_appointment": "Book Appointment",
+    "hero.title_part1": "Your health,",
+    "hero.title_part2": "our",
+    "hero.title_part3": "priority.",
+    "hero.subtitle": "Find the right doctor, book a slot, and get confirmed instantly. Quality healthcare at your fingertips — anytime, anywhere in India.",
+    "hero.cta_book": "Book an Appointment →",
+    "hero.cta_how": "How it works",
+    "search.placeholder": "Search by doctor name, specialty, or city...",
+    "search.button": "Search",
+    "doctors.heading": "Featured Doctors",
+    "doctors.tag": "Meet the team",
+    "doctors.sub": "Verified, experienced medical professionals — all available for online booking.",
+    "specialties.heading": "Specialties on HealthFirst",
+    "specialties.tag": "What we cover",
+    "specialties.sub": "From general checkups to specialist consultations — find the right doctor for every health need.",
+    "btn.book": "Book Appointment",
+    "btn.cancel": "Cancel",
+    "btn.reschedule": "Reschedule",
+    "btn.signin": "Sign In",
+    "btn.signout": "Sign Out",
+    "btn.forgot_password": "Forgot password?",
+    "myappts.title": "My Appointments",
+    "myappts.empty_title": "No saved appointments",
+    "lang.label": "Language"
+  },
+  hi: {
+    "nav.doctors": "डॉक्टर्स",
+    "nav.specialties": "विशेषज्ञता",
+    "nav.how_it_works": "यह कैसे काम करता है",
+    "nav.for_doctors": "डॉक्टरों के लिए",
+    "nav.my_appointments": "मेरी अपॉइंटमेंट्स",
+    "nav.book_appointment": "अपॉइंटमेंट बुक करें",
+    "hero.title_part1": "आपका स्वास्थ्य,",
+    "hero.title_part2": "हमारी",
+    "hero.title_part3": "प्राथमिकता।",
+    "hero.subtitle": "सही डॉक्टर ढूंढें, स्लॉट बुक करें, और तुरंत पुष्टि प्राप्त करें। भारत में कहीं भी, कभी भी गुणवत्तापूर्ण स्वास्थ्य सेवा।",
+    "hero.cta_book": "अपॉइंटमेंट बुक करें →",
+    "hero.cta_how": "यह कैसे काम करता है",
+    "search.placeholder": "डॉक्टर का नाम, विशेषज्ञता, या शहर खोजें...",
+    "search.button": "खोजें",
+    "doctors.heading": "विशेष डॉक्टर्स",
+    "doctors.tag": "टीम से मिलें",
+    "doctors.sub": "सत्यापित, अनुभवी चिकित्सा पेशेवर — सभी ऑनलाइन बुकिंग के लिए उपलब्ध।",
+    "specialties.heading": "HealthFirst पर विशेषज्ञताएं",
+    "specialties.tag": "हम क्या कवर करते हैं",
+    "specialties.sub": "सामान्य जांच से लेकर विशेषज्ञ परामर्श तक — हर स्वास्थ्य आवश्यकता के लिए सही डॉक्टर ढूंढें।",
+    "btn.book": "अपॉइंटमेंट बुक करें",
+    "btn.cancel": "रद्द करें",
+    "btn.reschedule": "पुनर्निर्धारित करें",
+    "btn.signin": "साइन इन करें",
+    "btn.signout": "साइन आउट",
+    "btn.forgot_password": "पासवर्ड भूल गए?",
+    "myappts.title": "मेरी अपॉइंटमेंट्स",
+    "myappts.empty_title": "कोई सहेजी गई अपॉइंटमेंट नहीं",
+    "lang.label": "भाषा"
+  }
+};
+
+function getCurrentLang() {
+  try { return localStorage.getItem("hf_lang") || "en"; } catch (e) { return "en"; }
+}
+
+function setCurrentLang(lang) {
+  try { localStorage.setItem("hf_lang", lang); } catch (e) {}
+  applyTranslations();
+}
+
+function t(key) {
+  const lang = getCurrentLang();
+  return (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || (TRANSLATIONS.en[key] || key);
+}
+
+function applyTranslations() {
+  const lang = getCurrentLang();
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.dataset.i18n;
+    const translated = t(key);
+    if (translated) el.textContent = translated;
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    const key = el.dataset.i18nPlaceholder;
+    const translated = t(key);
+    if (translated) el.placeholder = translated;
+  });
+  // Update language picker if present
+  const picker = document.getElementById("langPicker");
+  if (picker) picker.value = lang;
+}
+
+window.switchLang = function (lang) {
+  setCurrentLang(lang);
+};
+
+// Apply translations once DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", applyTranslations);
+} else {
+  setTimeout(applyTranslations, 0);
+}
+
 /* ─── India: states & cities ─── */
 const INDIA_STATES_CITIES = {
   "Andhra Pradesh": ["Visakhapatnam","Vijayawada","Guntur","Tirupati","Kakinada","Nellore","Kurnool","Rajahmundry","Anantapur","Other"],
@@ -119,14 +255,14 @@ async function initFirebase() {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
     const { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, setDoc, query, orderBy, where, serverTimestamp } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-    const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } =
+    const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     const auth = getAuth(app);
     firebaseReady = true;
     window._fs = { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, setDoc, query, orderBy, where, serverTimestamp };
-    window._auth = { auth, signInWithEmailAndPassword, signOut };
+    window._auth = { auth, signInWithEmailAndPassword, signOut, sendPasswordResetEmail };
     console.log("✅ Firebase connected");
     document.dispatchEvent(new Event("firebase-ready"));
 
@@ -258,33 +394,65 @@ window.doAdminLogout = async function () {
   location.reload();
 };
 
+window.doForgotPassword = async function () {
+  const email = (document.getElementById("loginEmail")?.value || "").trim();
+  if (!email) {
+    const promptEmail = prompt("Enter your email to receive a password reset link:");
+    if (!promptEmail) return;
+    return doForgotPasswordWith(promptEmail);
+  }
+  return doForgotPasswordWith(email);
+};
+
+async function doForgotPasswordWith(email) {
+  if (!window._auth) { alert("Connecting... try again in a moment."); return; }
+  if (!email.includes("@")) { alert("Please enter a valid email."); return; }
+  try {
+    await window._auth.sendPasswordResetEmail(window._auth.auth, email);
+    alert(`✅ Password reset email sent to ${email}.\n\nCheck your inbox (and spam folder) for the reset link. Click the link to set a new password, then come back here to sign in.`);
+  } catch (e) {
+    console.error("Reset error:", e);
+    if (e.code === "auth/user-not-found") {
+      alert("No account found with that email. Double-check the spelling, or contact your admin.");
+    } else if (e.code === "auth/invalid-email") {
+      alert("That doesn't look like a valid email. Please try again.");
+    } else {
+      alert("Could not send reset email: " + (e.message || "unknown error"));
+    }
+  }
+}
+
 // ── Firebase helpers ──
 async function saveBooking(data) {
   if (!firebaseReady) return null;
-  const { collection, addDoc, doc, setDoc, serverTimestamp } = window._fs;
+  const { collection, addDoc, doc, setDoc, updateDoc, serverTimestamp } = window._fs;
   try {
-    // 1. Save full booking (admin + doctor-only readable — contains patient PII)
-    const ref = await addDoc(collection(db, "bookings"), { ...data, createdAt: serverTimestamp() });
+    // Generate lookupToken FIRST so we can store it in both bookings and publicBookings
+    const lookupToken = "tk_" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 
-    // 2. Save lightweight public slot record (used by booking page to show slot availability)
+    // 1. Save full booking with lookupToken (admin + doctor-only readable)
+    const ref = await addDoc(collection(db, "bookings"), { ...data, lookupToken, createdAt: serverTimestamp() });
+
+    // 2. Save lightweight public slot record
     try {
       await addDoc(collection(db, "bookedSlots"), {
         doctorDate: data.doctorDate,
         slot: data.slot,
         bookingId: ref.id,
+        lookupToken: lookupToken,
         doctorEmail: data.doctorEmail || "",
         status: "confirmed",
         createdAt: serverTimestamp()
       });
     } catch (slotErr) { console.warn("bookedSlots write failed:", slotErr); }
 
-    // 3. Save patient-safe public lookup record (so patient can view their booking later via link)
-    const lookupToken = "tk_" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    // 3. Save patient-safe public lookup record
     try {
       await setDoc(doc(db, "publicBookings", lookupToken), {
         bookingId: ref.id,
         patientNameMasked: maskName(data.patientName),
         doctor: data.doctor,
+        doctorId: data.doctorId || "",
         specialty: data.specialty,
         dateDisplay: data.dateDisplay,
         date: data.date,
@@ -299,6 +467,43 @@ async function saveBooking(data) {
 
     return { id: ref.id, lookupToken };
   } catch (e) { console.error("saveBooking:", e); return null; }
+}
+
+/* Cancel a booking from the patient side (My Appointments page).
+   Uses lookupToken to authorize the cancellation. */
+async function cancelBookingAsPatient(lookupToken, bookingId) {
+  if (!firebaseReady || !lookupToken || !bookingId) return false;
+  const { doc, updateDoc, collection, getDocs, query, where, serverTimestamp } = window._fs;
+  let allOk = true;
+
+  // Update bookings.status with lookupToken match (Firestore rule verifies)
+  try {
+    await updateDoc(doc(db, "bookings", bookingId), {
+      status: "cancelled",
+      lookupToken: lookupToken,
+      cancelledAt: serverTimestamp(),
+      cancelledBy: "patient"
+    });
+  } catch (e) { console.error("cancelBookingAsPatient bookings:", e); allOk = false; }
+
+  // Update publicBookings.status
+  try {
+    await updateDoc(doc(db, "publicBookings", lookupToken), {
+      status: "cancelled",
+      cancelledAt: serverTimestamp()
+    });
+  } catch (e) { console.error("cancelBookingAsPatient publicBookings:", e); }
+
+  // Free up the slot in bookedSlots
+  try {
+    const q = query(collection(db, "bookedSlots"), where("bookingId", "==", bookingId));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      await updateDoc(doc(db, "bookedSlots", d.id), { status: "cancelled", lookupToken: lookupToken });
+    }
+  } catch (e) { console.error("cancelBookingAsPatient bookedSlots:", e); }
+
+  return allOk;
 }
 
 function maskName(name) {
@@ -361,6 +566,16 @@ async function loadDoctorByEmail(email) {
   } catch (e) { console.error("loadDoctorByEmail:", e); return null; }
 }
 
+async function loadDoctorById(id) {
+  if (!firebaseReady || !id) return null;
+  const { doc, getDoc } = window._fs;
+  try {
+    const snap = await getDoc(doc(db, "doctors", id));
+    if (!snap.exists()) return null;
+    return { id: snap.id, ...snap.data() };
+  } catch (e) { console.error("loadDoctorById:", e); return null; }
+}
+
 /* Public booking lookup (for my-appointments page) — keyed by lookupToken (doc ID) */
 async function loadPublicBooking(lookupToken) {
   if (!firebaseReady || !lookupToken) return null;
@@ -370,6 +585,41 @@ async function loadPublicBooking(lookupToken) {
     if (!snap.exists()) return null;
     return { lookupToken, ...snap.data() };
   } catch (e) { console.error("loadPublicBooking:", e); return null; }
+}
+
+/* ─── Doctor schedules ─── */
+async function loadDoctorSchedule(doctorId) {
+  if (!firebaseReady || !doctorId) {
+    return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [] };
+  }
+  const { doc, getDoc } = window._fs;
+  try {
+    const snap = await getDoc(doc(db, "doctorSchedules", doctorId));
+    if (!snap.exists()) {
+      return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [] };
+    }
+    const data = snap.data();
+    return {
+      weeklyPattern: data.weeklyPattern || defaultWeeklyPattern(),
+      blockedDates: data.blockedDates || []
+    };
+  } catch (e) {
+    console.error("loadDoctorSchedule:", e);
+    return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [] };
+  }
+}
+
+async function saveDoctorSchedule(doctorId, scheduleData) {
+  if (!firebaseReady || !doctorId) return false;
+  const { doc, setDoc, serverTimestamp } = window._fs;
+  try {
+    await setDoc(doc(db, "doctorSchedules", doctorId), {
+      weeklyPattern: scheduleData.weeklyPattern || defaultWeeklyPattern(),
+      blockedDates: scheduleData.blockedDates || [],
+      updatedAt: serverTimestamp()
+    });
+    return true;
+  } catch (e) { console.error("saveDoctorSchedule:", e); return false; }
 }
 
 async function loadReviews() {
@@ -507,11 +757,38 @@ if (document.getElementById("homeDoctorsGrid") || document.getElementById("homeS
 
   async function initHome() {
     const doctors = await loadDoctors();
+    window._homeAllDoctors = doctors; // cache for search filter
     renderHomeDoctors(doctors);
     renderHomeSpecialties(doctors);
     renderHomeStats(doctors);
     if (document.getElementById("liveReviewsGrid")) loadLiveReviews();
+
+    // Handle ?q= URL param (when arriving from a search elsewhere)
+    const qParam = getParam("q");
+    const searchInput = document.getElementById("homeSearchInput");
+    if (qParam && searchInput) {
+      searchInput.value = qParam;
+      filterHomeDoctors();
+    }
   }
+
+  window.filterHomeDoctors = function () {
+    const q = (document.getElementById("homeSearchInput")?.value || "").trim().toLowerCase();
+    const all = window._homeAllDoctors || [];
+    if (!q) { renderHomeDoctors(all); return; }
+    const filtered = all.filter(d =>
+      (d.name || "").toLowerCase().includes(q) ||
+      (d.specialty || "").toLowerCase().includes(q) ||
+      (d.city || "").toLowerCase().includes(q) ||
+      (d.state || "").toLowerCase().includes(q)
+    );
+    renderHomeDoctors(filtered);
+  };
+
+  window.searchAndGoToBook = function () {
+    const q = (document.getElementById("homeSearchInput")?.value || "").trim();
+    window.location.href = q ? `book.html?q=${encodeURIComponent(q)}` : "book.html";
+  };
 
   function renderHomeStats(doctors) {
     const el = document.getElementById("homeDoctorCount");
@@ -551,20 +828,26 @@ if (document.getElementById("homeDoctorsGrid") || document.getElementById("homeS
       grid.innerHTML = `
         <div style="grid-column:1/-1;text-align:center;padding:40px 24px;background:white;border-radius:var(--r-xl);border:1px solid var(--border)">
           <div style="font-size:48px;margin-bottom:14px">👨‍⚕️</div>
-          <h3 style="font-family:var(--ff-d);font-size:22px;color:var(--navy);margin-bottom:8px">Our doctors are coming soon</h3>
-          <p style="color:var(--navy-m);font-size:15px;margin-bottom:18px;max-width:480px;margin-left:auto;margin-right:auto">We're onboarding verified doctors across India. Are you a doctor? Join HealthFirst and start receiving patient bookings instantly.</p>
+          <h3 style="font-family:var(--ff-d);font-size:22px;color:var(--navy);margin-bottom:8px">No doctors found</h3>
+          <p style="color:var(--navy-m);font-size:15px;margin-bottom:18px;max-width:480px;margin-left:auto;margin-right:auto">Try a different search, or browse all doctors on the booking page.</p>
           <a href="for-doctors.html" class="btn-primary">Join as a Doctor →</a>
         </div>`;
       return;
     }
-    const featured = doctors.slice(0, 4);
+    // Show up to 8 when filtered, 4 when default view
+    const searchActive = (document.getElementById("homeSearchInput")?.value || "").trim().length > 0;
+    const featured = doctors.slice(0, searchActive ? 12 : 4);
     grid.innerHTML = featured.map(d => `
       <div class="doc-card">
-        <div class="doc-photo">${escapeHtml(d.avatar || "👨‍⚕️")}</div>
+        <a href="doctor-profile.html?id=${d.id}" style="text-decoration:none;color:inherit">
+          <div class="doc-photo">${escapeHtml(d.avatar || "👨‍⚕️")}</div>
+        </a>
         <div class="doc-info">
-          <div class="doc-name">${escapeHtml(d.name)}</div>
-          <div class="doc-spec">${escapeHtml(d.specialty || "")}</div>
-          <div class="doc-cred">${escapeHtml(d.qualification || "")}${d.experience ? " · " + escapeHtml(d.experience) : ""}</div>
+          <a href="doctor-profile.html?id=${d.id}" style="text-decoration:none;color:inherit">
+            <div class="doc-name">${escapeHtml(d.name)}</div>
+            <div class="doc-spec">${escapeHtml(d.specialty || "")}</div>
+            <div class="doc-cred">${escapeHtml(d.qualification || "")}${d.experience ? " · " + escapeHtml(d.experience) : ""}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
+          </a>
           <div class="doc-meta-row">
             <span class="doc-fee">₹${escapeHtml(d.fee)} / visit</span>
             <span class="doc-avail-badge"><span class="avail-dot"></span> Available</span>
@@ -717,6 +1000,18 @@ if (document.getElementById("docList")) {
 
     const specParam = getParam("spec");
     const docIdParam = getParam("docId");
+    const qParam = getParam("q");
+
+    if (qParam) {
+      const q = qParam.toLowerCase();
+      const filtered = allDoctors.filter(d =>
+        (d.name || "").toLowerCase().includes(q) ||
+        (d.specialty || "").toLowerCase().includes(q) ||
+        (d.city || "").toLowerCase().includes(q) ||
+        (d.state || "").toLowerCase().includes(q)
+      );
+      renderDoctorList(filtered);
+    }
     if (specParam) {
       const btn = document.querySelector(`.sf-btn[data-spec="${specParam}"]`);
       if (btn) btn.click();
@@ -850,17 +1145,42 @@ if (document.getElementById("docList")) {
     }
   }
 
-  const ALL_SLOTS = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
-                     "12:00 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM"];
+  const ALL_SLOTS_LOCAL = ALL_SLOTS; // reference the global
 
   async function buildTimeSlots() {
     const grid = document.getElementById("timeGrid");
     if (!grid) return;
-    grid.innerHTML = `<div style="grid-column:1/-1;padding:14px;text-align:center;font-size:13px;color:var(--navy-m)">⏳ Checking available slots...</div>`;
-    let bookedSlots = [];
-    if (selectedDoc) bookedSlots = await getBookedSlots(selectedDoc.name, getSelectedDateKey());
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:14px;text-align:center;font-size:13px;color:var(--navy-m)">⏳ Loading doctor's schedule...</div>`;
+    if (!selectedDoc) { grid.innerHTML = ""; return; }
+
+    // 1. Get this doctor's schedule
+    const schedule = await loadDoctorSchedule(selectedDoc.id);
+
+    // 2. Get selected date info
+    const dateKey = getSelectedDateKey();
+    const dateObj = new Date(); dateObj.setDate(dateObj.getDate() + selectedDateIdx);
+    const weekday = String(dateObj.getDay());
+
+    // 3. Check if date is blocked
+    if (schedule.blockedDates && schedule.blockedDates.includes(dateKey)) {
+      grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;font-size:14px;color:var(--navy-m);background:var(--bg);border-radius:var(--r-lg)">🚫 Doctor is not available on this date. Please pick another date.</div>`;
+      return;
+    }
+
+    // 4. Get available slots for this weekday
+    const allowedSlots = schedule.weeklyPattern[weekday] || [];
+    if (allowedSlots.length === 0) {
+      grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;font-size:14px;color:var(--navy-m);background:var(--bg);border-radius:var(--r-lg)">📅 Doctor doesn't see patients on ${DAY_NAMES[parseInt(weekday)]}s. Please pick another date.</div>`;
+      return;
+    }
+
+    // 5. Get booked slots
+    const bookedSlots = await getBookedSlots(selectedDoc.name, dateKey);
+
+    // 6. Render slots — order based on global ALL_SLOTS for consistency
     grid.innerHTML = "";
-    ALL_SLOTS.forEach(slot => {
+    const slotsToShow = ALL_SLOTS_LOCAL.filter(s => allowedSlots.includes(s));
+    slotsToShow.forEach(slot => {
       const isBooked = bookedSlots.includes(slot);
       const btn = document.createElement("button");
       btn.className = "time-slot" + (isBooked ? " booked" : slot === selectedSlot ? " selected" : "");
@@ -1141,6 +1461,149 @@ if (document.getElementById("queue-upcoming")) {
 
   const fbParam = getParam("feedback");
   if (fbParam) document.getElementById("fbModal") && document.getElementById("fbModal").classList.add("open");
+
+  /* ─── Schedule editor ─── */
+  let currentScheduleData = { weeklyPattern: defaultWeeklyPattern(), blockedDates: [] };
+  let currentScheduleDoctorId = null;
+
+  document.addEventListener("doctor-ready", initScheduleEditor);
+
+  async function initScheduleEditor() {
+    const me = window._currentDoctor || {};
+    const isAdmin = (me.email === ADMIN_EMAIL);
+    if (isAdmin) {
+      // Admin viewing doctor.html — show a doctor picker for schedule management
+      document.getElementById("scheduleEditor").innerHTML = `
+        <div style="background:var(--amber-l);padding:14px;border-radius:var(--r-lg);font-size:13px;color:#92400E;margin-bottom:14px">
+          <strong>🛡️ Admin view.</strong> You're viewing as admin. Switch doctor below to manage their schedule.
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:13px;font-weight:600;color:var(--navy-s);margin-bottom:6px;display:block">Select doctor to manage:</label>
+          <select id="adminDocPicker" onchange="adminLoadDocSchedule()" style="width:100%;padding:10px 12px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
+            <option value="">— Select a doctor —</option>
+          </select>
+        </div>
+        <div id="scheduleGrid"></div>
+      `;
+      const doctors = await loadDoctors();
+      const picker = document.getElementById("adminDocPicker");
+      doctors.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d.id;
+        opt.textContent = `${d.name} — ${d.specialty || ""}${d.city ? " · " + d.city : ""}`;
+        picker.appendChild(opt);
+      });
+    } else if (me.id) {
+      currentScheduleDoctorId = me.id;
+      currentScheduleData = await loadDoctorSchedule(me.id);
+      document.getElementById("scheduleEditor").innerHTML = '<div id="scheduleGrid"></div>';
+      renderScheduleGrid();
+      renderBlockedDatesList();
+    } else {
+      document.getElementById("scheduleEditor").innerHTML = '<div style="text-align:center;color:var(--navy-m);padding:24px">Could not load your schedule. Please refresh.</div>';
+    }
+  }
+
+  window.adminLoadDocSchedule = async function () {
+    const docId = document.getElementById("adminDocPicker").value;
+    if (!docId) {
+      document.getElementById("scheduleGrid").innerHTML = "";
+      document.getElementById("blockedDatesList").innerHTML = "";
+      currentScheduleDoctorId = null;
+      return;
+    }
+    currentScheduleDoctorId = docId;
+    currentScheduleData = await loadDoctorSchedule(docId);
+    renderScheduleGrid();
+    renderBlockedDatesList();
+  };
+
+  function renderScheduleGrid() {
+    const grid = document.getElementById("scheduleGrid");
+    if (!grid) return;
+    const days = [
+      { num: "1", name: "Monday" },
+      { num: "2", name: "Tuesday" },
+      { num: "3", name: "Wednesday" },
+      { num: "4", name: "Thursday" },
+      { num: "5", name: "Friday" },
+      { num: "6", name: "Saturday" },
+      { num: "0", name: "Sunday" }
+    ];
+    grid.innerHTML = days.map(d => {
+      const activeSlots = new Set(currentScheduleData.weeklyPattern[d.num] || []);
+      const isOff = activeSlots.size === 0;
+      return `
+        <div style="margin-bottom:18px;background:var(--bg);border-radius:var(--r-lg);padding:14px 16px;border:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--navy)">${d.name}${isOff ? ' <span style="font-size:11px;background:var(--red-l);color:#991B1B;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px">Day off</span>' : ' <span style="font-size:11px;background:var(--teal-l);color:var(--teal-d);padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px">' + activeSlots.size + ' slot' + (activeSlots.size === 1 ? '' : 's') + '</span>'}</div>
+            <div style="display:flex;gap:6px">
+              <button onclick="toggleAllSlots('${d.num}', true)" style="background:none;border:1px solid var(--border-md);padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Select all</button>
+              <button onclick="toggleAllSlots('${d.num}', false)" style="background:none;border:1px solid var(--border-md);padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Clear all</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${ALL_SLOTS.map(s => {
+              const isActive = activeSlots.has(s);
+              return `<button onclick="toggleSlot('${d.num}','${s}')" style="padding:6px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--ff);transition:all .15s;${isActive ? 'background:var(--teal);color:white;border:1.5px solid var(--teal)' : 'background:white;color:var(--navy-s);border:1.5px solid var(--border-md)'}">${s}</button>`;
+            }).join("")}
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  window.toggleSlot = function (dayNum, slot) {
+    if (!currentScheduleData.weeklyPattern[dayNum]) currentScheduleData.weeklyPattern[dayNum] = [];
+    const idx = currentScheduleData.weeklyPattern[dayNum].indexOf(slot);
+    if (idx === -1) currentScheduleData.weeklyPattern[dayNum].push(slot);
+    else currentScheduleData.weeklyPattern[dayNum].splice(idx, 1);
+    renderScheduleGrid();
+  };
+
+  window.toggleAllSlots = function (dayNum, selectAll) {
+    currentScheduleData.weeklyPattern[dayNum] = selectAll ? [...ALL_SLOTS] : [];
+    renderScheduleGrid();
+  };
+
+  function renderBlockedDatesList() {
+    const list = document.getElementById("blockedDatesList");
+    if (!list) return;
+    const dates = (currentScheduleData.blockedDates || []).sort();
+    if (dates.length === 0) {
+      list.innerHTML = `<div style="font-size:12px;color:var(--navy-h);font-style:italic">No blocked dates yet.</div>`;
+      return;
+    }
+    list.innerHTML = dates.map(d => {
+      const dateObj = new Date(d);
+      const display = dateObj.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      return `<div style="display:inline-flex;align-items:center;gap:8px;background:var(--red-l);color:#991B1B;padding:6px 12px;border-radius:14px;font-size:12px;font-weight:600;margin:0 6px 6px 0">🚫 ${display} <button onclick="removeBlockedDate('${d}')" style="background:none;border:none;color:#991B1B;cursor:pointer;font-size:16px;line-height:1;padding:0;font-weight:700">×</button></div>`;
+    }).join("");
+  }
+
+  window.addBlockedDate = function () {
+    const inp = document.getElementById("newBlockedDate");
+    const val = inp?.value;
+    if (!val) { alert("Please pick a date."); return; }
+    if (!currentScheduleData.blockedDates) currentScheduleData.blockedDates = [];
+    if (currentScheduleData.blockedDates.includes(val)) { alert("That date is already blocked."); return; }
+    currentScheduleData.blockedDates.push(val);
+    inp.value = "";
+    renderBlockedDatesList();
+  };
+
+  window.removeBlockedDate = function (dateStr) {
+    currentScheduleData.blockedDates = (currentScheduleData.blockedDates || []).filter(d => d !== dateStr);
+    renderBlockedDatesList();
+  };
+
+  window.saveMySchedule = async function () {
+    if (!currentScheduleDoctorId) { alert("No doctor selected."); return; }
+    const btn = document.getElementById("saveScheduleBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Saving..."; }
+    const ok = await saveDoctorSchedule(currentScheduleDoctorId, currentScheduleData);
+    if (btn) { btn.disabled = false; btn.textContent = "💾 Save Schedule"; }
+    alert(ok ? "✅ Schedule saved! Changes apply to all future bookings." : "❌ Failed to save. Please try again.");
+  };
 }
 
 /* ═══════════════════════════════════
@@ -1154,23 +1617,10 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     const reviews = await loadReviews();
     const doctors = await loadDoctors();
     const applications = await loadDoctorApplications();
+    window._adminAllBookings = bookings; // cache for filtering
+    window._adminAllDoctors = doctors;
 
-    const table = document.getElementById("recentBookingsTable");
-    if (table) {
-      table.innerHTML = bookings.length === 0
-        ? `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings yet.</div>`
-        : bookings.slice(0, 20).map(b => `
-            <div class="appt-item">
-              <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${escapeHtml((b.patientName||"??").slice(0,2).toUpperCase())}</div>
-              <div class="ai-info">
-                <div class="ai-name">${escapeHtml(b.patientName)} → ${escapeHtml(b.doctor)}</div>
-                <div class="ai-detail">${escapeHtml(b.specialty)} · ${escapeHtml(b.dateDisplay)} · ${escapeHtml(b.slot)} · ₹${escapeHtml(b.fee)} · Token ${escapeHtml(b.token)}
-                  &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod==="paid_online"?"background:#ECFDF5;color:#065F46":"background:#FFF3E0;color:#E65100"}">${b.paymentMethod==="paid_online"?"✅ Paid":"🏥 Clinic"}</span>
-                </div>
-              </div>
-              <span class="status-badge ${b.status==="done"?"sb-done":b.status==="cancelled"?"sb-cancelled":"sb-waiting"}">${escapeHtml(b.status)}</span>
-            </div>`).join("");
-    }
+    renderAdminBookings(bookings);
 
     const docList = document.getElementById("docManageList");
     if (docList) {
@@ -1378,6 +1828,78 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
       });
     } catch (e) { console.error("Could not reject:", e); alert("❌ Failed to update application."); return; }
     loadAdminData();
+  };
+
+  /* Render bookings list with optional filter */
+  function renderAdminBookings(bookings) {
+    const table = document.getElementById("recentBookingsTable");
+    if (!table) return;
+    if (bookings.length === 0) {
+      table.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings match.</div>`;
+      return;
+    }
+    table.innerHTML = bookings.slice(0, 50).map(b => `
+      <div class="appt-item">
+        <div class="ai-token" style="font-size:11px;background:var(--blue-l);color:var(--blue);width:36px;height:36px">${escapeHtml((b.patientName||"??").slice(0,2).toUpperCase())}</div>
+        <div class="ai-info">
+          <div class="ai-name">${escapeHtml(b.patientName)} → ${escapeHtml(b.doctor)}</div>
+          <div class="ai-detail">📞 ${escapeHtml(b.phone||"—")} · ${escapeHtml(b.specialty)} · ${escapeHtml(b.dateDisplay)} · ${escapeHtml(b.slot)} · ₹${escapeHtml(b.fee)} · Token ${escapeHtml(b.token)}
+            &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod==="paid_online"?"background:#ECFDF5;color:#065F46":"background:#FFF3E0;color:#E65100"}">${b.paymentMethod==="paid_online"?"✅ Paid":"🏥 Clinic"}</span>
+          </div>
+        </div>
+        <span class="status-badge ${b.status==="done"?"sb-done":b.status==="cancelled"?"sb-cancelled":"sb-waiting"}">${escapeHtml(b.status)}</span>
+      </div>`).join("");
+  }
+
+  /* Patient phone/name search */
+  window.searchPatientBookings = function () {
+    const q = (document.getElementById("patientSearchInput")?.value || "").trim().toLowerCase();
+    const all = window._adminAllBookings || [];
+    if (!q) { renderAdminBookings(all); return; }
+    const filtered = all.filter(b =>
+      (b.phone || "").toLowerCase().includes(q) ||
+      (b.patientName || "").toLowerCase().includes(q) ||
+      (b.token || "").toLowerCase().includes(q)
+    );
+    renderAdminBookings(filtered);
+  };
+
+  /* WhatsApp reminders for tomorrow's bookings */
+  window.openRemindersPanel = function () {
+    const all = window._adminAllBookings || [];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowKey = tomorrow.toISOString().split("T")[0];
+    const tomorrowBookings = all.filter(b => b.date === tomorrowKey && b.status === "confirmed");
+
+    const wrap = document.getElementById("remindersPanel");
+    if (!wrap) return;
+
+    if (tomorrowBookings.length === 0) {
+      wrap.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">📭 No confirmed bookings for tomorrow yet.</div>`;
+      return;
+    }
+
+    wrap.innerHTML = `
+      <div style="padding:14px 20px;background:var(--teal-l);font-size:13px;color:var(--teal-d);font-weight:600">
+        📱 ${tomorrowBookings.length} appointment${tomorrowBookings.length > 1 ? "s" : ""} tomorrow. Click each to send a WhatsApp reminder.
+      </div>
+    ` + tomorrowBookings.map(b => {
+      const phone = (b.phone || "").replace(/\D/g, "");
+      const msg = encodeURIComponent(
+        `Hi ${b.patientName}! 👋\n\nThis is a reminder for your appointment tomorrow:\n\n👨‍⚕️ ${b.doctor} (${b.specialty})\n📅 ${b.dateDisplay}\n⏰ ${b.slot}\n🆔 Token: ${b.token}\n💰 Fee: ₹${b.fee}\n\nPlease arrive 10 minutes early. To cancel or reschedule, reply to this message.\n\n— HealthFirst`
+      );
+      const waLink = phone ? `https://wa.me/91${phone}?text=${msg}` : "#";
+      return `
+        <div class="appt-item">
+          <div class="ai-token" style="font-size:11px;background:var(--green-l);color:#065F46;width:36px;height:36px">${escapeHtml((b.patientName||"??").slice(0,2).toUpperCase())}</div>
+          <div class="ai-info">
+            <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.slot)}</div>
+            <div class="ai-detail">📞 ${escapeHtml(b.phone||"—")} · ${escapeHtml(b.doctor)} · Token ${escapeHtml(b.token)}</div>
+          </div>
+          ${phone ? `<a href="${waLink}" target="_blank" class="btn-primary" style="font-size:12px;padding:7px 14px;text-decoration:none">📱 Send Reminder</a>` : `<span style="font-size:11px;color:var(--red)">No phone</span>`}
+        </div>`;
+    }).join("");
   };
 
   window.removeDoctorAdmin = async function (id, name) {
@@ -1671,6 +2193,7 @@ if (document.getElementById("myAppointmentsList")) {
       const status = b.status || "confirmed";
       const statusColor = status === "cancelled" ? "var(--red)" : (status === "done" ? "var(--navy-m)" : "var(--green)");
       const statusLabel = status === "cancelled" ? "Cancelled" : (status === "done" ? "Completed" : (isUpcoming ? "Upcoming" : "Past"));
+      const canModify = isUpcoming && status === "confirmed";
 
       return `
         <div style="background:white;border-radius:var(--r-xl);padding:24px;border:1px solid var(--border);margin-bottom:16px;${status === "cancelled" ? "opacity:0.7" : ""}">
@@ -1688,12 +2211,42 @@ if (document.getElementById("myAppointmentsList")) {
             <div><strong>💰</strong> ₹${escapeHtml(b.fee || "—")}</div>
           </div>
           <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+            ${canModify ? `
+              <button onclick="rescheduleBooking('${b.lookupToken}','${b.bookingId || ""}','${b.doctorId || ""}')" class="btn-primary" style="font-size:12px;padding:7px 14px">🔄 Reschedule</button>
+              <button onclick="cancelMyBooking('${b.lookupToken}','${b.bookingId || ""}')" style="font-size:12px;padding:7px 14px;background:white;color:var(--red);border:1.5px solid var(--red);border-radius:var(--r);font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
+            ` : ""}
             <button onclick="copyMyApptLink('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px">🔗 Copy link</button>
-            <button onclick="removeMyAppt('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px;color:var(--navy-m)">🗑 Remove from this device</button>
+            <button onclick="removeMyAppt('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px;color:var(--navy-m)">🗑 Remove from device</button>
           </div>
         </div>`;
     }).join("");
   }
+
+  window.cancelMyBooking = async function (lookupToken, bookingId) {
+    if (!lookupToken || !bookingId) { alert("Missing booking details."); return; }
+    if (!confirm("Cancel this appointment?\n\nThis will free up your slot and notify the doctor. This action cannot be undone.")) return;
+    const ok = await cancelBookingAsPatient(lookupToken, bookingId);
+    if (ok) {
+      alert("✅ Appointment cancelled. Your slot has been freed up.\n\nWe recommend also messaging the doctor's clinic to confirm.");
+      location.reload();
+    } else {
+      alert("⚠️ Cancellation went through partially. Please contact the clinic directly to confirm cancellation.");
+      location.reload();
+    }
+  };
+
+  window.rescheduleBooking = async function (lookupToken, bookingId, doctorId) {
+    if (!confirm("Reschedule this appointment?\n\nWe'll cancel the current slot and take you to the booking page to pick a new time with the same doctor.")) return;
+    if (lookupToken && bookingId) {
+      await cancelBookingAsPatient(lookupToken, bookingId);
+    }
+    // Redirect to book.html with the doctor pre-selected
+    if (doctorId) {
+      window.location.href = `book.html?docId=${doctorId}`;
+    } else {
+      window.location.href = `book.html`;
+    }
+  };
 
   window.copyMyApptLink = function (token) {
     const url = `${window.location.origin}${window.location.pathname.replace(/[^\/]*$/, "")}my-appointments.html?t=${token}`;
@@ -1726,6 +2279,94 @@ if (document.getElementById("myAppointmentsList")) {
     if (match) token = match[1];
     window.location.href = `my-appointments.html?t=${encodeURIComponent(token)}`;
   };
+}
+
+/* ═══════════════════════════════════
+   DOCTOR PROFILE PAGE
+═══════════════════════════════════ */
+if (document.getElementById("doctorProfileWrap")) {
+  document.addEventListener("firebase-ready", initDoctorProfile);
+  if (firebaseReady) initDoctorProfile();
+
+  async function initDoctorProfile() {
+    const wrap = document.getElementById("doctorProfileWrap");
+    const id = getParam("id");
+    if (!id) {
+      wrap.innerHTML = `<div style="text-align:center;padding:60px 24px"><h2 style="font-family:var(--ff-d);color:var(--navy);margin-bottom:12px">Doctor not specified</h2><p style="color:var(--navy-m);margin-bottom:20px">No doctor ID was provided in the URL.</p><a href="book.html" class="btn-primary">Browse All Doctors →</a></div>`;
+      return;
+    }
+    const doc = await loadDoctorById(id);
+    if (!doc) {
+      wrap.innerHTML = `<div style="text-align:center;padding:60px 24px"><h2 style="font-family:var(--ff-d);color:var(--navy);margin-bottom:12px">Doctor not found</h2><p style="color:var(--navy-m);margin-bottom:20px">This doctor may have been removed or the link is invalid.</p><a href="book.html" class="btn-primary">Browse All Doctors →</a></div>`;
+      return;
+    }
+
+    // Load reviews for THIS doctor
+    const allReviews = await loadReviews();
+    const myReviews = allReviews.filter(r => r.doctor === doc.name);
+    const avgRating = myReviews.length ? (myReviews.reduce((s, r) => s + (r.rating || 5), 0) / myReviews.length).toFixed(1) : null;
+    const stars = (r) => "★".repeat(r) + "☆".repeat(5 - r);
+
+    // Load schedule preview
+    const schedule = await loadDoctorSchedule(doc.id);
+    const activeDays = Object.entries(schedule.weeklyPattern || {})
+      .filter(([k, slots]) => slots && slots.length > 0)
+      .map(([k]) => DAY_NAMES[parseInt(k)]);
+
+    wrap.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:32px;align-items:start;max-width:1080px;margin:0 auto">
+        <div style="background:white;border-radius:var(--r-xl);padding:32px 28px;border:1px solid var(--border);text-align:center;position:sticky;top:100px">
+          <div style="font-size:90px;line-height:1;margin-bottom:14px">${escapeHtml(doc.avatar || "👨‍⚕️")}</div>
+          <h1 style="font-family:var(--ff-d);font-size:28px;font-weight:700;color:var(--navy);margin-bottom:6px;line-height:1.2">${escapeHtml(doc.name)}</h1>
+          <div style="font-size:15px;color:var(--teal);font-weight:600;margin-bottom:12px">${escapeHtml(doc.specialty || "")}</div>
+          ${avgRating ? `<div style="display:inline-block;padding:6px 14px;background:#FEF3C7;color:#92400E;border-radius:20px;font-size:13px;font-weight:700;margin-bottom:14px">★ ${avgRating} (${myReviews.length} review${myReviews.length === 1 ? "" : "s"})</div>` : `<div style="display:inline-block;padding:6px 14px;background:var(--bg);color:var(--navy-m);border-radius:20px;font-size:13px;margin-bottom:14px">New on HealthFirst</div>`}
+          <div style="background:var(--teal-l);padding:12px;border-radius:var(--r-lg);margin:14px 0">
+            <div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Consultation Fee</div>
+            <div style="font-family:var(--ff-d);font-size:28px;font-weight:700;color:var(--teal-d)">₹${escapeHtml(doc.fee || "—")}</div>
+          </div>
+          <a href="book.html?docId=${doc.id}" class="btn-primary" style="width:100%;justify-content:center;font-size:15px;padding:14px">📅 Book Appointment</a>
+        </div>
+
+        <div>
+          <div style="background:white;border-radius:var(--r-xl);padding:28px;border:1px solid var(--border);margin-bottom:20px">
+            <h2 style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy);margin-bottom:16px">About Dr. ${escapeHtml((doc.name || "").replace(/^Dr\.?\s*/, "").split(" ")[0])}</h2>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;font-size:14px">
+              <div><div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:3px">Qualification</div><div style="color:var(--navy)">${escapeHtml(doc.qualification || "Not specified")}</div></div>
+              <div><div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:3px">Experience</div><div style="color:var(--navy)">${escapeHtml(doc.experience || "Not specified")}</div></div>
+              ${doc.city || doc.state ? `<div><div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:3px">Location</div><div style="color:var(--navy)">${escapeHtml([doc.city, doc.state].filter(Boolean).join(", "))}</div></div>` : ""}
+              ${doc.clinicPhone ? `<div><div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:3px">Clinic Phone</div><div style="color:var(--navy)"><a href="tel:${escapeHtml(doc.clinicPhone)}" style="color:var(--teal);font-weight:600">${escapeHtml(doc.clinicPhone)}</a></div></div>` : ""}
+            </div>
+            ${doc.clinicAddress ? `<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)"><div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:4px">Clinic Address</div><div style="color:var(--navy);font-size:14px;line-height:1.5">📍 ${escapeHtml(doc.clinicAddress)}</div></div>` : ""}
+          </div>
+
+          ${activeDays.length > 0 ? `<div style="background:white;border-radius:var(--r-xl);padding:28px;border:1px solid var(--border);margin-bottom:20px">
+            <h2 style="font-family:var(--ff-d);font-size:18px;font-weight:700;color:var(--navy);margin-bottom:10px">📅 Available Days</h2>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${activeDays.map(d => `<span style="background:var(--teal-l);color:var(--teal-d);padding:5px 12px;border-radius:14px;font-size:12px;font-weight:600">${d}</span>`).join("")}
+            </div>
+            <div style="margin-top:12px;font-size:12px;color:var(--navy-m);font-style:italic">Click "Book Appointment" to see exact time slots.</div>
+          </div>` : ""}
+
+          <div style="background:white;border-radius:var(--r-xl);padding:28px;border:1px solid var(--border)">
+            <h2 style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy);margin-bottom:16px">⭐ Patient Reviews ${myReviews.length > 0 ? `<span style="font-size:14px;color:var(--navy-m);font-weight:500">(${myReviews.length})</span>` : ""}</h2>
+            ${myReviews.length === 0 ? `<div style="text-align:center;padding:24px;color:var(--navy-m);font-size:14px">💬 No reviews yet. Be the first to share your experience after your visit!</div>` :
+              myReviews.slice(0, 10).map(r => `
+              <div style="padding:14px 0;border-bottom:1px solid var(--border)">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+                  <strong style="color:var(--navy);font-size:14px">${escapeHtml(r.patientName || "Patient")}</strong>
+                  <span style="color:#F59E0B;font-size:14px;white-space:nowrap">${stars(r.rating || 5)}</span>
+                </div>
+                <p style="font-size:14px;color:var(--navy-m);line-height:1.6;font-style:italic;margin:0">"${escapeHtml(r.comment)}"</p>
+              </div>`).join("")
+            }
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Update page title
+    document.title = `${doc.name} — HealthFirst`;
+  }
 }
 
 // Home smooth scroll

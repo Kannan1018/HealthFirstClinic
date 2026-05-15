@@ -57,6 +57,7 @@
       <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" onkeypress="if(event.key==='Enter')doAdminLogin()">
       <button class="auth-submit" id="loginBtn" onclick="doAdminLogin()">Sign In</button>
       <div id="loginError" class="auth-error"></div>
+      <a href="javascript:doForgotPassword()" class="auth-back" style="display:block;margin-top:14px">🔑 Forgot password?</a>
       <a href="index.html" class="auth-back">← Back to public site</a>
     </div>
   </div>
@@ -241,11 +242,27 @@
         </div>
       </div>
 
+      <!-- WHATSAPP REMINDERS -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">📱 Send Tomorrow's Reminders</div>
+          <button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="openRemindersPanel()">🔄 Load</button>
+        </div>
+        <div id="remindersPanel">
+          <div style="padding:18px 20px;font-size:13px;color:var(--navy-m);line-height:1.6">
+            Click <strong>Load</strong> above to see tomorrow's appointments. Each will have a one-click WhatsApp button to send reminders to patients.
+          </div>
+        </div>
+      </div>
+
       <!-- RECENT BOOKINGS -->
       <div class="panel">
         <div class="panel-head">
-          <div class="panel-title">Recent Bookings</div>
+          <div class="panel-title">Recent Bookings & Patient Search</div>
           <span style="font-size:12px;color:var(--navy-m)">Live feed</span>
+        </div>
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+          <input type="text" id="patientSearchInput" oninput="searchPatientBookings()" placeholder="🔍 Search by phone, name, or token..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
         </div>
         <div id="recentBookingsTable"><div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading bookings...</div></div>
       </div>
@@ -295,7 +312,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=11"></script>
 <script>
   const d = new Date();
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];

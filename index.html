@@ -19,14 +19,18 @@
       <span class="logo-text">HealthFirst</span>
     </a>
     <ul class="nav-links">
-      <li><a href="index.html#doctors">Doctors</a></li>
-      <li><a href="index.html#specialties">Specialties</a></li>
-      <li><a href="index.html#how">How it works</a></li>
-      <li><a href="my-appointments.html">My Appointments</a></li>
-      <li><a href="for-doctors.html">For Doctors</a></li>
+      <li><a href="index.html#doctors" data-i18n="nav.doctors">Doctors</a></li>
+      <li><a href="index.html#specialties" data-i18n="nav.specialties">Specialties</a></li>
+      <li><a href="index.html#how" data-i18n="nav.how_it_works">How it works</a></li>
+      <li><a href="my-appointments.html" data-i18n="nav.my_appointments">My Appointments</a></li>
+      <li><a href="for-doctors.html" data-i18n="nav.for_doctors">For Doctors</a></li>
     </ul>
     <div class="nav-actions">
-      <a href="book.html" class="btn-primary nav-book">Book Appointment</a>
+      <select id="langPicker" onchange="switchLang(this.value)" style="padding:6px 8px;border:1.5px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:12px;background:white;outline:none;margin-right:8px;cursor:pointer">
+        <option value="en">English</option>
+        <option value="hi">हिंदी</option>
+      </select>
+      <a href="book.html" class="btn-primary nav-book" data-i18n="nav.book_appointment">Book Appointment</a>
       <button class="burger" id="burger" aria-label="Open menu">
         <span></span><span></span><span></span>
       </button>
@@ -51,11 +55,11 @@
   </div>
   <div class="container hero-grid">
     <div class="hero-text">
-      <h1>Your health, <em>our</em> priority.</h1>
-      <p class="hero-sub">Find the right doctor, book a slot, and get confirmed instantly. Quality healthcare at your fingertips — anytime, anywhere in India.</p>
+      <h1><span data-i18n="hero.title_part1">Your health,</span> <em data-i18n="hero.title_part2">our</em> <span data-i18n="hero.title_part3">priority.</span></h1>
+      <p class="hero-sub" data-i18n="hero.subtitle">Find the right doctor, book a slot, and get confirmed instantly. Quality healthcare at your fingertips — anytime, anywhere in India.</p>
       <div class="hero-actions">
-        <a href="book.html" class="btn-primary btn-lg">Book an Appointment →</a>
-        <a href="index.html#how" class="btn-ghost btn-lg">How it works</a>
+        <a href="book.html" class="btn-primary btn-lg" data-i18n="hero.cta_book">Book an Appointment →</a>
+        <a href="index.html#how" class="btn-ghost btn-lg" data-i18n="hero.cta_how">How it works</a>
       </div>
     </div>
     <div class="hero-card-wrap">
@@ -83,6 +87,19 @@
         <div>✓ Real patient reviews</div>
         <div>✓ Pan-India coverage</div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ SEARCH BAR ══════════════ -->
+<section style="padding:24px 0;background:white;border-bottom:1px solid var(--border)">
+  <div class="container">
+    <div style="max-width:680px;margin:0 auto;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:240px;position:relative">
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:18px">🔍</span>
+        <input type="text" id="homeSearchInput" data-i18n-placeholder="search.placeholder" placeholder="Search by doctor name, specialty, or city..." oninput="filterHomeDoctors()" onkeypress="if(event.key==='Enter')searchAndGoToBook()" style="width:100%;padding:12px 14px 12px 44px;border:1.5px solid var(--border-md);border-radius:var(--r-lg);font-family:var(--ff);font-size:15px;background:var(--bg);outline:none;transition:border-color .15s">
+      </div>
+      <button onclick="searchAndGoToBook()" class="btn-primary" style="padding:12px 24px;font-size:14px" data-i18n="search.button">Search</button>
     </div>
   </div>
 </section>
@@ -265,6 +282,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
