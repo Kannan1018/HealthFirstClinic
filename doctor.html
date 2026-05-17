@@ -22,9 +22,9 @@
   .auth-error { color: var(--red); font-size: 13px; margin-top: 12px; text-align: center; min-height: 18px; line-height: 1.4; }
   .auth-back { display: block; text-align: center; margin-top: 18px; font-size: 13px; color: var(--navy-m); text-decoration: none; }
   .auth-back:hover { color: var(--teal); }
-  .auth-info-bar { background: var(--teal-l); padding: 8px 24px; font-size: 12px; color: var(--teal-d); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--teal-ll); }
-  .auth-info-bar .signout-btn { background: none; border: 1px solid var(--teal); color: var(--teal-d); padding: 4px 12px; border-radius: 14px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: var(--ff); transition: all .15s; }
-  .auth-info-bar .signout-btn:hover { background: var(--teal); color: white; }
+  .auth-info-bar { background: var(--teal); padding: 10px 24px; font-size: 13px; color: white; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .auth-info-bar .signout-btn { background: white; border: none; color: var(--teal-d); padding: 7px 18px; border-radius: 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: var(--ff); transition: all .15s; }
+  .auth-info-bar .signout-btn:hover { background: var(--bg); transform: scale(1.03); }
 </style>
 </head>
 <body>
@@ -470,7 +470,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 <script>
   // Set today's date
   const d = new Date();

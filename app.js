@@ -283,6 +283,16 @@ async function handleAuthStateChange(user) {
   const gate = document.getElementById("authGate");
   if (!gate) return; // page doesn't need auth
 
+  // ── If URL has ?signout=1, force a sign-out so login screen shows ──
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("signout") === "1" && user) {
+    try { await window._auth.signOut(window._auth.auth); } catch (e) {}
+    // Remove the ?signout=1 from URL so refresh doesn't re-trigger it
+    const newUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, "", newUrl);
+    return; // onAuthStateChanged will fire again with user=null
+  }
+
   const requireWhat = gate.dataset.require || "admin"; // "admin" or "doctor"
   const content = document.getElementById("authedContent");
   const loading = document.getElementById("authLoading");

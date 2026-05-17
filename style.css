@@ -86,10 +86,11 @@ nav {
 .logo { display: flex; align-items: center; gap: 10px; }
 .logo-icon { font-size: 24px; }
 .logo-text { font-family: var(--ff-d); font-size: 22px; font-weight: 800; color: var(--navy); letter-spacing: -0.5px; }
-.nav-links { display: flex; list-style: none; gap: 8px; }
+.nav-links { display: flex; list-style: none; gap: 4px; flex-wrap: nowrap; }
 .nav-links a {
   font-size: 14px; font-weight: 500; color: var(--navy-m);
-  padding: 8px 14px; border-radius: 8px; transition: all .15s;
+  padding: 8px 12px; border-radius: 8px; transition: all .15s;
+  white-space: nowrap;
 }
 .nav-links a:hover { color: var(--teal); background: var(--teal-l); }
 .nav-actions { display: flex; align-items: center; gap: 12px; }
