@@ -115,11 +115,28 @@
         <div class="dash-greeting" id="dashGreeting">Good morning 👋</div>
         <div class="dash-date" id="dashDate"></div>
       </div>
-      <div style="display:flex;gap:10px">
+      <div style="display:flex;gap:10px;align-items:center">
+        <!-- Notification bell -->
+        <div style="position:relative">
+          <button id="notifBell" onclick="toggleNotifications()" style="position:relative;background:white;border:1.5px solid var(--border-md);width:42px;height:42px;border-radius:12px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s" title="Notifications">
+            🔔
+            <span id="notifBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--red);color:white;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid white;font-family:var(--ff)">0</span>
+          </button>
+          <div id="notifDropdown" style="display:none;position:absolute;top:48px;right:0;width:340px;background:white;border-radius:var(--r-xl);box-shadow:0 12px 40px rgba(0,0,0,.15);border:1px solid var(--border);z-index:1000;max-height:480px;overflow-y:auto">
+            <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+              <div style="font-family:var(--ff-d);font-weight:700;color:var(--navy)">🔔 Notifications</div>
+              <button onclick="markAllNotificationsRead()" style="background:none;border:none;color:var(--teal);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--ff)">Mark all read</button>
+            </div>
+            <div id="notifList"></div>
+          </div>
+        </div>
         <button class="btn-ghost" onclick="window.print()">🖨 Print Queue</button>
         <a href="book.html" class="btn-primary">View Booking Page</a>
       </div>
     </div>
+
+    <!-- NEXT PATIENT CARD (only shown in Today section) -->
+    <div id="nextPatientCard" style="display:none"></div>
 
     <!-- KPIs -->
     <div class="kpi-grid">
@@ -147,6 +164,18 @@
 
     <!-- TODAY'S QUEUE SECTION -->
     <div id="section-today">
+
+      <!-- TIMELINE VIEW -->
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head">
+          <div class="panel-title">📊 Today's Timeline</div>
+          <span style="font-size:12px;color:var(--navy-m)" id="timelineLegend">Tap any slot to see details</span>
+        </div>
+        <div id="timelineView" style="padding:20px">
+          <div style="text-align:center;color:var(--navy-m);font-size:13px">Loading timeline...</div>
+        </div>
+      </div>
+
       <div class="dash-grid">
         <div>
           <div class="panel">
@@ -425,9 +454,23 @@
   </main>
 </div>
 
+<!-- PATIENT HISTORY MODAL -->
+<div id="patientHistoryModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9998;align-items:center;justify-content:center;padding:20px">
+  <div style="background:white;border-radius:var(--r-xl);max-width:680px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:white;z-index:1">
+      <div>
+        <div id="phmName" style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy)">Patient History</div>
+        <div id="phmSub" style="font-size:13px;color:var(--navy-m);margin-top:2px"></div>
+      </div>
+      <button onclick="closePatientHistory()" style="background:none;border:none;font-size:28px;color:var(--navy-m);cursor:pointer;line-height:1;padding:0 4px">×</button>
+    </div>
+    <div id="phmContent" style="padding:20px 24px"></div>
+  </div>
+</div>
+
 </div><!-- /authedContent -->
 
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 <script>
   // Set today's date
   const d = new Date();
@@ -447,6 +490,9 @@
     document.getElementById('section-'+id).style.display = 'block';
     document.querySelectorAll('.sb-link').forEach(l => l.classList.remove('active'));
     btn.classList.add('active');
+    // Only show Next Patient card on Today's Queue tab
+    const npc = document.getElementById('nextPatientCard');
+    if (npc) npc.style.display = (id === 'today' && npc.innerHTML.trim()) ? 'block' : 'none';
   }
 
   // Availability toggle
