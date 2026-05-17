@@ -1401,30 +1401,53 @@ if (document.getElementById("queue-upcoming")) {
     const me = window._currentDoctor || {};
     const isAdmin = (me.email === ADMIN_EMAIL);
 
-    // Update sidebar info to reflect current doctor
+    // Update sidebar + greeting
     const setText = (sel, val) => { const el = document.querySelector(sel); if (el) el.textContent = val; };
     setText(".sb-avatar", me.avatar || (isAdmin ? "🛡️" : "👨‍⚕️"));
     setText(".sb-name", me.name || "Doctor");
     setText(".sb-spec", me.specialty || (isAdmin ? "Admin view — all doctors" : ""));
 
+    // Greeting based on time of day + name
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    const shortName = me.name ? me.name.replace(/^Dr\.?\s*/i, "Dr. ").split(/\s+/).slice(0, 2).join(" ") : "Doctor";
+    const greetEl = document.getElementById("dashGreeting");
+    if (greetEl) greetEl.textContent = `${greeting}, ${shortName} 👋`;
+
     // Load bookings: admin sees all, doctor sees only their own
-    const bookings = isAdmin
-      ? await loadBookings(today)
-      : await loadMyBookingsAsDoctor(me.email, today);
+    const allMyBookings = isAdmin
+      ? await loadBookings()
+      : await loadMyBookingsAsDoctor(me.email);
 
+    const todayBookings = allMyBookings.filter(b => b.date === today);
+    const reviews = await loadReviews();
+    const myReviews = isAdmin ? reviews : reviews.filter(r => r.doctor === me.name);
+
+    renderTodayQueue(todayBookings);
+    renderQueueStatus(todayBookings);
+    renderKPIs(todayBookings, allMyBookings, myReviews);
+    renderTodaysScheduleBox(me);
+    renderEarnings(allMyBookings);
+    renderPatientRecords(allMyBookings);
+
+    // Store globally for tab switching / searching
+    window._myAllBookings = allMyBookings;
+  }
+
+  function renderTodayQueue(todayBookings) {
     const container = document.getElementById("queue-upcoming");
-
-    if (bookings.length === 0) {
-      container.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No bookings for today yet.<br><br><a href="book.html" style="color:var(--teal);font-weight:600">Go to booking page →</a></div>`;
+    if (!container) return;
+    const confirmed = todayBookings.filter(b => b.status === "confirmed");
+    if (confirmed.length === 0) {
+      container.innerHTML = `<div style="padding:32px 24px;text-align:center;color:var(--navy-m);font-size:14px"><div style="font-size:40px;margin-bottom:10px">📭</div>No appointments scheduled for today.</div>`;
       return;
     }
-
-    container.innerHTML = bookings.filter(b => b.status === "confirmed").map((b, i) => `
+    container.innerHTML = confirmed.map((b, i) => `
       <div class="appt-item" id="appt-${b.id}">
         <div class="ai-token">${i + 1}</div>
         <div class="ai-info">
           <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.gender || "")}, ${escapeHtml(b.age || "")}</div>
-          <div class="ai-detail">${escapeHtml(b.slot)} · ${escapeHtml(b.reason || "General consultation")} · Token ${escapeHtml(b.token)}
+          <div class="ai-detail">${escapeHtml(b.slot)} · ${escapeHtml(b.reason || "General consultation")} · Token ${escapeHtml(b.token)} · 📞 ${escapeHtml(b.phone || "—")}
             &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod === "paid_online" ? "background:#ECFDF5;color:#065F46" : "background:#FFF3E0;color:#E65100"}">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
           </div>
         </div>
@@ -1433,17 +1456,142 @@ if (document.getElementById("queue-upcoming")) {
           <button class="ai-btn cancel" onclick="cancelAppt('${b.id}')">✗ Cancel</button>
         </div>
       </div>`).join("");
-
-    const countEl = document.getElementById("waitingCount");
-    if (countEl) countEl.textContent = bookings.filter(b => b.status === "confirmed").length;
-    const kpiEl = document.getElementById("kpiToday");
-    if (kpiEl) kpiEl.textContent = bookings.length;
   }
+
+  function renderQueueStatus(todayBookings) {
+    const upcoming = todayBookings.filter(b => b.status === "confirmed").length;
+    const done = todayBookings.filter(b => b.status === "done").length;
+    const cancelled = todayBookings.filter(b => b.status === "cancelled").length;
+    const total = upcoming + done + cancelled;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+
+    const el = id => document.getElementById(id);
+    if (el("waitingCount")) el("waitingCount").textContent = upcoming;
+    if (el("completedCount")) el("completedCount").textContent = done;
+    if (el("cancelledCount")) el("cancelledCount").textContent = cancelled;
+    if (el("progressBar")) el("progressBar").style.width = pct + "%";
+    if (el("progressText")) el("progressText").textContent = `${done} of ${total} completed (${pct}%)`;
+  }
+
+  function renderKPIs(todayBookings, allBookings, myReviews) {
+    const el = id => document.getElementById(id);
+    const todayCompleted = todayBookings.filter(b => b.status === "done");
+    const todayRevenue = todayCompleted.reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const avgRating = myReviews.length ? (myReviews.reduce((s, r) => s + (r.rating || 5), 0) / myReviews.length).toFixed(1) : "—";
+    const totalAll = allBookings.length;
+    const allCompleted = allBookings.filter(b => b.status === "done").length;
+    const allCancelled = allBookings.filter(b => b.status === "cancelled").length;
+    const showRate = (allCompleted + allCancelled) > 0 ? Math.round((allCompleted / (allCompleted + allCancelled)) * 100) : null;
+
+    if (el("kpiToday")) el("kpiToday").textContent = todayBookings.length;
+    if (el("kpiTodayDelta")) el("kpiTodayDelta").textContent = todayBookings.length === 0 ? "No bookings yet" : `${todayCompleted.length} completed so far`;
+    if (el("kpiRevenue")) el("kpiRevenue").textContent = "₹" + todayRevenue.toLocaleString("en-IN");
+    if (el("kpiRevenueDelta")) el("kpiRevenueDelta").textContent = todayCompleted.length === 0 ? "No completed visits yet" : `From ${todayCompleted.length} visit${todayCompleted.length === 1 ? "" : "s"}`;
+    if (el("kpiRating")) el("kpiRating").textContent = avgRating === "—" ? "— ★" : avgRating + " ★";
+    if (el("kpiRatingDelta")) el("kpiRatingDelta").textContent = myReviews.length === 0 ? "No reviews yet" : `From ${myReviews.length} review${myReviews.length === 1 ? "" : "s"}`;
+    if (el("kpiShowRate")) el("kpiShowRate").textContent = showRate === null ? "—" : showRate + "%";
+    if (el("kpiShowRateDelta")) el("kpiShowRateDelta").textContent = showRate === null ? "Need more data" : `${allCompleted} of ${allCompleted + allCancelled} visits completed`;
+  }
+
+  async function renderTodaysScheduleBox(me) {
+    const box = document.getElementById("todaysScheduleBox");
+    if (!box || !me.id) return;
+    const sched = await loadDoctorSchedule(me.id);
+    const today = new Date().toISOString().split("T")[0];
+    const weekday = String(new Date().getDay());
+    const slots = sched.weeklyPattern[weekday] || [];
+    const isBlocked = (sched.blockedDates || []).includes(today);
+
+    if (isBlocked) {
+      box.innerHTML = `<div style="padding:14px 16px;font-size:13px;color:var(--red);text-align:center">🚫 Today is a blocked day. No bookings allowed.</div>`;
+      return;
+    }
+    if (slots.length === 0) {
+      box.innerHTML = `<div style="padding:14px 16px;font-size:13px;color:var(--navy-m);text-align:center">📅 You don't see patients on ${DAY_NAMES[parseInt(weekday)]}s.</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div style="padding:12px 16px;font-size:12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)"><span style="color:var(--navy-m)">Available slots today</span><span style="font-weight:700;color:var(--teal)">${slots.length}</span></div>
+      <div style="padding:12px 16px;font-size:12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)"><span style="color:var(--navy-m)">First slot</span><span style="font-weight:600;color:var(--navy)">${slots[0]}</span></div>
+      <div style="padding:12px 16px;font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--navy-m)">Last slot</span><span style="font-weight:600;color:var(--navy)">${slots[slots.length - 1]}</span></div>`;
+  }
+
+  function renderEarnings(allBookings) {
+    const el = id => document.getElementById(id);
+    const today = new Date().toISOString().split("T")[0];
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+    const weekStart = (function () { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; })();
+
+    const completed = allBookings.filter(b => b.status === "done");
+    const sum = arr => arr.reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const earnMonth = sum(completed.filter(b => b.date >= monthStart));
+    const earnWeek = sum(completed.filter(b => b.date >= weekStart));
+    const earnToday = sum(completed.filter(b => b.date === today));
+    const uniquePatients = new Set(completed.map(b => (b.phone || "").replace(/\D/g, "")).filter(Boolean)).size;
+
+    if (el("earnMonth")) el("earnMonth").textContent = "₹" + earnMonth.toLocaleString("en-IN");
+    if (el("earnWeek")) el("earnWeek").textContent = "₹" + earnWeek.toLocaleString("en-IN");
+    if (el("earnToday")) el("earnToday").textContent = "₹" + earnToday.toLocaleString("en-IN");
+    if (el("earnPatients")) el("earnPatients").textContent = uniquePatients;
+
+    const breakdown = el("earningsBreakdown");
+    if (breakdown) {
+      if (completed.length === 0) {
+        breakdown.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px"><div style="font-size:36px;margin-bottom:10px">💰</div>No completed visits yet. Earnings will appear here as you mark patients as "Done".</div>`;
+      } else {
+        breakdown.innerHTML = `<div style="padding:0">` + completed.slice(0, 20).map(b => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px">
+            <div><strong>${escapeHtml(b.patientName)}</strong> · ${escapeHtml(b.dateDisplay || b.date)} · ${escapeHtml(b.slot)}</div>
+            <div style="font-weight:700;color:var(--teal)">₹${escapeHtml(b.fee || 0)}</div>
+          </div>`).join("") + `</div>`;
+      }
+    }
+  }
+
+  function renderPatientRecords(allBookings) {
+    const list = document.getElementById("patientList");
+    if (!list) return;
+    // Group by phone number (unique patients)
+    const byPhone = {};
+    allBookings.forEach(b => {
+      const k = (b.phone || "").replace(/\D/g, "");
+      if (!k) return;
+      if (!byPhone[k] || (b.date > byPhone[k].date)) byPhone[k] = b;
+    });
+    const patients = Object.values(byPhone).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    if (patients.length === 0) {
+      list.innerHTML = `<div style="padding:32px 24px;text-align:center;color:var(--navy-m);font-size:14px"><div style="font-size:36px;margin-bottom:10px">👥</div>Patient records will appear here as you see patients.</div>`;
+      return;
+    }
+    list.innerHTML = patients.map(p => {
+      const initials = (p.patientName || "??").split(/\s+/).slice(0, 2).map(s => s[0] || "").join("").toUpperCase();
+      return `
+        <div class="appt-item">
+          <div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">${escapeHtml(initials)}</div>
+          <div class="ai-info">
+            <div class="ai-name">${escapeHtml(p.patientName)}${p.gender ? " · " + escapeHtml(p.gender) : ""}${p.age ? ", " + escapeHtml(p.age) : ""}</div>
+            <div class="ai-detail">Last visit: ${escapeHtml(p.dateDisplay || p.date)} · ${escapeHtml(p.reason || "Consultation")} · 📞 ${escapeHtml(p.phone)}</div>
+          </div>
+          <span style="font-size:11px;font-weight:600;color:var(--navy-m);white-space:nowrap;padding:4px 10px;background:var(--bg);border-radius:14px">${escapeHtml(p.status || "—")}</span>
+        </div>`;
+    }).join("");
+  }
+
+  window.searchPatientRecords = function (query) {
+    const all = window._myAllBookings || [];
+    const q = (query || "").trim().toLowerCase();
+    if (!q) { renderPatientRecords(all); return; }
+    const filtered = all.filter(b =>
+      (b.patientName || "").toLowerCase().includes(q) ||
+      (b.phone || "").toLowerCase().includes(q)
+    );
+    renderPatientRecords(filtered);
+  };
 
   window.markDone = async function (id, patientName, phone) {
     await updateBookingStatus(id, "done");
-    const row = document.getElementById("appt-" + id);
-    if (row) row.querySelector(".ai-actions").innerHTML = '<span class="status-badge sb-done">✓ Done</span>';
     if (phone && phone.length >= 10) {
       const feedbackUrl = `${window.location.origin}/book.html?feedback=${id}`;
       const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today. Please share your feedback: ${feedbackUrl}`);
@@ -1451,12 +1599,13 @@ if (document.getElementById("queue-upcoming")) {
       const sendWA = confirm(`✅ Appointment marked as done!\n\nSend a WhatsApp feedback request to ${patientName}?`);
       if (sendWA) window.open(waLink, "_blank");
     }
+    loadTodayQueue(); // refresh all data
   };
 
   window.cancelAppt = async function (id) {
+    if (!confirm("Cancel this appointment?")) return;
     await updateBookingStatus(id, "cancelled");
-    const row = document.getElementById("appt-" + id);
-    if (row) { row.style.opacity = "0.5"; row.querySelector(".ai-actions").innerHTML = '<span class="status-badge sb-cancelled">Cancelled</span>'; }
+    loadTodayQueue(); // refresh all data
   };
 
   const fbParam = getParam("feedback");

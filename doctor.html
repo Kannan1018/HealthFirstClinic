@@ -87,9 +87,9 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sb-doc">
-      <div class="sb-avatar">👩‍⚕️</div>
-      <div class="sb-name">Dr. Priya Sharma</div>
-      <div class="sb-spec">General Physician</div>
+      <div class="sb-avatar">👨‍⚕️</div>
+      <div class="sb-name">Doctor</div>
+      <div class="sb-spec">—</div>
       <div class="sb-avail">
         <span class="sb-avail-label" id="availLabel">Available</span>
         <button class="sb-toggle" id="sbToggle" onclick="toggleAvail()">
@@ -112,7 +112,7 @@
   <main class="dash-main">
     <div class="dash-top">
       <div>
-        <div class="dash-greeting">Good morning, Dr. Sharma 👋</div>
+        <div class="dash-greeting" id="dashGreeting">Good morning 👋</div>
         <div class="dash-date" id="dashDate"></div>
       </div>
       <div style="display:flex;gap:10px">
@@ -125,23 +125,23 @@
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-label">Today's Appointments</div>
-        <div class="kpi-val" id="kpiToday">14</div>
-        <div class="kpi-delta up" id="kpiTodayDelta">↑ 3 more than yesterday</div>
+        <div class="kpi-val" id="kpiToday">0</div>
+        <div class="kpi-delta" id="kpiTodayDelta" style="color:var(--navy-m)">—</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Today's Revenue</div>
-        <div class="kpi-val">₹8,400</div>
-        <div class="kpi-delta up">↑ ₹1,200 vs daily avg</div>
+        <div class="kpi-val" id="kpiRevenue">₹0</div>
+        <div class="kpi-delta" id="kpiRevenueDelta" style="color:var(--navy-m)">—</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Patient Rating</div>
-        <div class="kpi-val">4.9 ★</div>
-        <div class="kpi-delta up">↑ 0.1 this month</div>
+        <div class="kpi-val" id="kpiRating">— ★</div>
+        <div class="kpi-delta" id="kpiRatingDelta" style="color:var(--navy-m)">No reviews yet</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Show Rate</div>
-        <div class="kpi-val">96%</div>
-        <div class="kpi-delta dn">↓ 2% vs last week</div>
+        <div class="kpi-val" id="kpiShowRate">—</div>
+        <div class="kpi-delta" id="kpiShowRateDelta" style="color:var(--navy-m)">—</div>
       </div>
     </div>
 
@@ -251,30 +251,28 @@
             <div class="panel-head"><div class="panel-title">Queue Status</div></div>
             <div style="padding:16px 20px">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <span style="font-size:13px;color:var(--navy-m)">Waiting</span>
-                <span style="font-size:16px;font-weight:700;color:var(--amber)" id="waitingCount">6</span>
+                <span style="font-size:13px;color:var(--navy-m)">Upcoming</span>
+                <span style="font-size:16px;font-weight:700;color:var(--amber)" id="waitingCount">0</span>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                 <span style="font-size:13px;color:var(--navy-m)">Completed</span>
-                <span style="font-size:16px;font-weight:700;color:var(--green)">8</span>
+                <span style="font-size:16px;font-weight:700;color:var(--green)" id="completedCount">0</span>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                 <span style="font-size:13px;color:var(--navy-m)">Cancelled / No-show</span>
-                <span style="font-size:16px;font-weight:700;color:var(--red)">2</span>
+                <span style="font-size:16px;font-weight:700;color:var(--red)" id="cancelledCount">0</span>
               </div>
               <div style="background:var(--bg);border-radius:var(--r);height:8px;overflow:hidden;margin-bottom:6px">
-                <div style="height:8px;background:var(--teal);border-radius:var(--r);width:57%"></div>
+                <div style="height:8px;background:var(--teal);border-radius:var(--r);width:0%" id="progressBar"></div>
               </div>
-              <div style="font-size:12px;color:var(--navy-m)">8 of 14 completed (57%)</div>
+              <div style="font-size:12px;color:var(--navy-m)" id="progressText">0 of 0 completed</div>
             </div>
           </div>
 
           <div class="panel">
             <div class="panel-head"><div class="panel-title">Today's Schedule</div></div>
-            <div style="padding:0 4px">
-              <div style="padding:10px 16px;font-size:12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)"><span style="color:var(--navy-m)">Morning slot</span><span style="font-weight:600;color:var(--navy)">9 AM – 1 PM</span></div>
-              <div style="padding:10px 16px;font-size:12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border)"><span style="color:var(--navy-m)">Afternoon slot</span><span style="font-weight:600;color:var(--navy)">2 PM – 6 PM</span></div>
-              <div style="padding:10px 16px;font-size:12px;display:flex;justify-content:space-between"><span style="color:var(--navy-m)">Avg. per patient</span><span style="font-weight:600;color:var(--navy)">~12 minutes</span></div>
+            <div style="padding:0 4px" id="todaysScheduleBox">
+              <div style="padding:14px 16px;font-size:13px;color:var(--navy-m);text-align:center">No schedule loaded yet</div>
             </div>
           </div>
         </div>
@@ -397,14 +395,13 @@
       <div class="panel">
         <div class="panel-head">
           <div class="panel-title">👥 Patient Records</div>
-          <input class="form-input" type="text" placeholder="Search patients..." style="width:220px;margin:0;padding:7px 12px;font-size:13px" oninput="searchPatients(this.value)">
+          <input class="form-input" type="text" placeholder="Search patients..." style="width:220px;margin:0;padding:7px 12px;font-size:13px" id="patientSearchBox" oninput="searchPatientRecords(this.value)">
         </div>
         <div id="patientList">
-          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">AG</div><div class="ai-info"><div class="ai-name">Anita Gupta · Female, 34</div><div class="ai-detail">Last visit: Today · Fever & headache · 📞 9876543210</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
-          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">VS</div><div class="ai-info"><div class="ai-name">Vikash Sharma · Male, 52</div><div class="ai-detail">Last visit: Today · BP checkup · 📞 9765432109</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
-          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">PJ</div><div class="ai-info"><div class="ai-name">Priya Joshi · Female, 28</div><div class="ai-detail">Last visit: 3 days ago · Skin allergy · 📞 9654321098</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
-          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">RP</div><div class="ai-info"><div class="ai-name">Ramesh Patel · Male, 61</div><div class="ai-detail">Last visit: 1 week ago · Diabetes follow-up · 📞 9543210987</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
-          <div class="appt-item"><div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">SA</div><div class="ai-info"><div class="ai-name">Suresh Agarwal · Male, 45</div><div class="ai-detail">Last visit: Today · Cold & cough · 📞 9432109876</div></div><button class="ai-btn done" style="white-space:nowrap">View History</button></div>
+          <div style="padding:32px 24px;text-align:center;color:var(--navy-m);font-size:14px">
+            <div style="font-size:36px;margin-bottom:10px">👥</div>
+            Patient records will appear here once you've completed your first visits.
+          </div>
         </div>
       </div>
     </div>
@@ -412,18 +409,15 @@
     <!-- EARNINGS SECTION -->
     <div id="section-earnings" style="display:none">
       <div class="kpi-grid" style="margin-bottom:20px">
-        <div class="kpi-card"><div class="kpi-label">This Month</div><div class="kpi-val">₹1,13,600</div><div class="kpi-delta up">↑ 18% vs last month</div></div>
-        <div class="kpi-card"><div class="kpi-label">This Week</div><div class="kpi-val">₹28,400</div><div class="kpi-delta up">↑ 12% vs last week</div></div>
-        <div class="kpi-card"><div class="kpi-label">Today</div><div class="kpi-val">₹8,400</div><div class="kpi-delta up">↑ ₹1,200 vs avg</div></div>
-        <div class="kpi-card"><div class="kpi-label">Avg per Patient</div><div class="kpi-val">₹421</div><div class="kpi-delta up">↑ ₹21 this month</div></div>
+        <div class="kpi-card"><div class="kpi-label">This Month</div><div class="kpi-val" id="earnMonth">₹0</div><div class="kpi-delta" style="color:var(--navy-m)">From completed visits</div></div>
+        <div class="kpi-card"><div class="kpi-label">This Week</div><div class="kpi-val" id="earnWeek">₹0</div><div class="kpi-delta" style="color:var(--navy-m)">Last 7 days</div></div>
+        <div class="kpi-card"><div class="kpi-label">Today</div><div class="kpi-val" id="earnToday">₹0</div><div class="kpi-delta" style="color:var(--navy-m)">So far</div></div>
+        <div class="kpi-card"><div class="kpi-label">Total Patients</div><div class="kpi-val" id="earnPatients">0</div><div class="kpi-delta" style="color:var(--navy-m)">All-time</div></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">💰 Monthly Earnings — May 2026</div></div>
-        <div class="rev-bars" style="padding:20px">
-          <div class="rb-row"><span class="rb-label">Week 1</span><div class="rb-track"><div class="rb-fill" style="width:72%"></div></div><span class="rb-val">₹26,400</span></div>
-          <div class="rb-row"><span class="rb-label">Week 2</span><div class="rb-track"><div class="rb-fill" style="width:85%"></div></div><span class="rb-val">₹31,200</span></div>
-          <div class="rb-row"><span class="rb-label">Week 3</span><div class="rb-track"><div class="rb-fill" style="width:65%"></div></div><span class="rb-val">₹23,800</span></div>
-          <div class="rb-row"><span class="rb-label">This week</span><div class="rb-track"><div class="rb-fill" style="width:77%"></div></div><span class="rb-val">₹28,400</span></div>
+        <div class="panel-head"><div class="panel-title">💰 Recent Earnings Breakdown</div></div>
+        <div style="padding:20px;font-size:13px;color:var(--navy-m);text-align:center" id="earningsBreakdown">
+          Detailed breakdown will appear here once you have completed visits.
         </div>
       </div>
     </div>
@@ -433,7 +427,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=14"></script>
 <script>
   // Set today's date
   const d = new Date();
