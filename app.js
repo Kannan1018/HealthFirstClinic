@@ -1429,6 +1429,9 @@ if (document.getElementById("queue-upcoming")) {
     renderTodaysScheduleBox(me);
     renderEarnings(allMyBookings);
     renderPatientRecords(allMyBookings);
+    renderNextPatient(todayBookings);
+    renderTimeline(todayBookings, me);
+    renderNotifications(allMyBookings, myReviews);
 
     // Store globally for tab switching / searching
     window._myAllBookings = allMyBookings;
@@ -1442,11 +1445,14 @@ if (document.getElementById("queue-upcoming")) {
       container.innerHTML = `<div style="padding:32px 24px;text-align:center;color:var(--navy-m);font-size:14px"><div style="font-size:40px;margin-bottom:10px">📭</div>No appointments scheduled for today.</div>`;
       return;
     }
-    container.innerHTML = confirmed.map((b, i) => `
+    container.innerHTML = confirmed.map((b, i) => {
+      const phoneAttr = (b.phone || "").replace(/\D/g, "");
+      const nameAttr = escapeHtml(b.patientName || "Patient").replace(/'/g, "&#39;");
+      return `
       <div class="appt-item" id="appt-${b.id}">
         <div class="ai-token">${i + 1}</div>
-        <div class="ai-info">
-          <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.gender || "")}, ${escapeHtml(b.age || "")}</div>
+        <div class="ai-info" style="cursor:pointer" onclick="showPatientHistory('${phoneAttr}','${nameAttr}')">
+          <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.gender || "")}, ${escapeHtml(b.age || "")} <span style="font-size:11px;color:var(--teal);font-weight:600;margin-left:6px">📋 history</span></div>
           <div class="ai-detail">${escapeHtml(b.slot)} · ${escapeHtml(b.reason || "General consultation")} · Token ${escapeHtml(b.token)} · 📞 ${escapeHtml(b.phone || "—")}
             &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod === "paid_online" ? "background:#ECFDF5;color:#065F46" : "background:#FFF3E0;color:#E65100"}">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
           </div>
@@ -1455,7 +1461,8 @@ if (document.getElementById("queue-upcoming")) {
           <button class="ai-btn done" onclick="markDone('${b.id}','${escapeHtml(b.patientName)}','${b.phone || ""}')">✓ Done</button>
           <button class="ai-btn cancel" onclick="cancelAppt('${b.id}')">✗ Cancel</button>
         </div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
 
   function renderQueueStatus(todayBookings) {
@@ -1567,14 +1574,16 @@ if (document.getElementById("queue-upcoming")) {
     }
     list.innerHTML = patients.map(p => {
       const initials = (p.patientName || "??").split(/\s+/).slice(0, 2).map(s => s[0] || "").join("").toUpperCase();
+      const phoneAttr = (p.phone || "").replace(/\D/g, "");
+      const nameAttr = escapeHtml(p.patientName || "Patient").replace(/'/g, "&#39;");
       return `
-        <div class="appt-item">
+        <div class="appt-item" style="cursor:pointer" data-phone="${phoneAttr}" data-name="${nameAttr}" onclick="showPatientHistory('${phoneAttr}','${nameAttr}')">
           <div class="ai-token" style="background:var(--blue-l);color:var(--blue);font-size:11px;width:36px;height:36px">${escapeHtml(initials)}</div>
           <div class="ai-info">
             <div class="ai-name">${escapeHtml(p.patientName)}${p.gender ? " · " + escapeHtml(p.gender) : ""}${p.age ? ", " + escapeHtml(p.age) : ""}</div>
             <div class="ai-detail">Last visit: ${escapeHtml(p.dateDisplay || p.date)} · ${escapeHtml(p.reason || "Consultation")} · 📞 ${escapeHtml(p.phone)}</div>
           </div>
-          <span style="font-size:11px;font-weight:600;color:var(--navy-m);white-space:nowrap;padding:4px 10px;background:var(--bg);border-radius:14px">${escapeHtml(p.status || "—")}</span>
+          <span style="font-size:11px;font-weight:600;color:var(--teal);white-space:nowrap;padding:4px 10px;background:var(--teal-l);border-radius:14px">View History →</span>
         </div>`;
     }).join("");
   }
@@ -1588,7 +1597,391 @@ if (document.getElementById("queue-upcoming")) {
       (b.phone || "").toLowerCase().includes(q)
     );
     renderPatientRecords(filtered);
+
+    // Clicking a patient name should open their history
   };
+
+  /* ─────────────────────────────────────────────
+     FEATURE 1 — TODAY'S TIMELINE
+  ───────────────────────────────────────────── */
+  function slotToMinutes(slot) {
+    // Convert "9:30 AM" → 570
+    if (!slot) return 0;
+    const m = slot.match(/^(\d+):(\d+)\s*(AM|PM)/i);
+    if (!m) return 0;
+    let h = parseInt(m[1]);
+    const min = parseInt(m[2]);
+    const isPM = m[3].toUpperCase() === "PM";
+    if (h === 12) h = isPM ? 12 : 0;
+    else if (isPM) h += 12;
+    return h * 60 + min;
+  }
+
+  async function renderTimeline(todayBookings, me) {
+    const wrap = document.getElementById("timelineView");
+    if (!wrap || !me.id) return;
+
+    const sched = await loadDoctorSchedule(me.id);
+    const today = new Date().toISOString().split("T")[0];
+    const weekday = String(new Date().getDay());
+    const todaySlots = sched.weeklyPattern[weekday] || [];
+    const isBlocked = (sched.blockedDates || []).includes(today);
+
+    if (isBlocked) {
+      wrap.innerHTML = `<div style="text-align:center;padding:24px;color:var(--red);font-size:14px">🚫 Today is a blocked day. No bookings allowed.</div>`;
+      return;
+    }
+    if (todaySlots.length === 0) {
+      wrap.innerHTML = `<div style="text-align:center;padding:24px;color:var(--navy-m);font-size:14px">📅 You don't see patients on ${DAY_NAMES[parseInt(weekday)]}s. Edit your schedule in "My Schedule" tab.</div>`;
+      return;
+    }
+
+    // Build a map of slot → booking
+    const bookingsBySlot = {};
+    todayBookings.forEach(b => { if (b.slot) bookingsBySlot[b.slot] = b; });
+
+    // Current time
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+
+    // Sort slots by time
+    const sortedSlots = [...todaySlots].sort((a, b) => slotToMinutes(a) - slotToMinutes(b));
+
+    let bookedCount = 0;
+    const slotsHtml = sortedSlots.map(slot => {
+      const slotMins = slotToMinutes(slot);
+      const isPast = slotMins < nowMins - 15;
+      const isCurrent = !isPast && slotMins <= nowMins + 30;
+      const b = bookingsBySlot[slot];
+      let bg, color, label, hoverContent = "";
+
+      if (b && b.status === "confirmed") {
+        bookedCount++;
+        bg = isCurrent ? "var(--teal)" : (isPast ? "var(--navy-m)" : "var(--teal-d)");
+        color = "white";
+        label = "●";
+        hoverContent = `${b.patientName} · Token ${b.token}`;
+      } else if (b && b.status === "done") {
+        bookedCount++;
+        bg = "var(--green-l)";
+        color = "var(--green)";
+        label = "✓";
+        hoverContent = `${b.patientName} · Done`;
+      } else if (b && b.status === "cancelled") {
+        bg = "var(--red-l)";
+        color = "var(--red)";
+        label = "✗";
+        hoverContent = `${b.patientName} · Cancelled`;
+      } else {
+        bg = isPast ? "#F1F5F9" : "white";
+        color = isPast ? "var(--navy-h)" : "var(--navy-s)";
+        label = "";
+        hoverContent = "Available";
+      }
+
+      const borderStyle = isCurrent && !b ? "border:2px solid var(--teal);" : "border:1px solid var(--border);";
+
+      return `<div title="${escapeHtml(slot)} — ${escapeHtml(hoverContent)}" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px;cursor:default">
+        <div style="width:100%;height:36px;background:${bg};color:${color};${borderStyle}border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;transition:transform .1s">${label}</div>
+        <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot.replace(/:00 /, ' ').replace(' AM', 'a').replace(' PM', 'p'))}</div>
+      </div>`;
+    }).join("");
+
+    wrap.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${slotsHtml}</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--navy-m);padding-top:10px;border-top:1px solid var(--border)">
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:var(--teal);border-radius:3px;display:inline-block"></span>Booked</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:var(--teal);border:2px solid var(--teal);border-radius:3px;display:inline-block"></span>Now</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:var(--green-l);border:1px solid var(--green);border-radius:3px;display:inline-block"></span>Done</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:white;border:1px solid var(--border);border-radius:3px;display:inline-block"></span>Available</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:#F1F5F9;border:1px solid var(--border);border-radius:3px;display:inline-block"></span>Past</span>
+        <span style="margin-left:auto;font-weight:600">${bookedCount}/${sortedSlots.length} booked</span>
+      </div>`;
+  }
+
+  /* ─────────────────────────────────────────────
+     FEATURE 2 — NEXT PATIENT HERO CARD
+  ───────────────────────────────────────────── */
+  function renderNextPatient(todayBookings) {
+    const card = document.getElementById("nextPatientCard");
+    if (!card) return;
+
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const today = now.toISOString().split("T")[0];
+
+    // Find next upcoming confirmed booking (today, slot in future or current)
+    const upcoming = todayBookings
+      .filter(b => b.status === "confirmed" && b.date === today)
+      .map(b => ({ ...b, mins: slotToMinutes(b.slot) }))
+      .filter(b => b.mins >= nowMins - 5)
+      .sort((a, b) => a.mins - b.mins);
+
+    if (upcoming.length === 0) {
+      card.style.display = "none";
+      return;
+    }
+
+    const next = upcoming[0];
+    const minsUntil = next.mins - nowMins;
+    let urgencyLabel, urgencyColor;
+    if (minsUntil <= 5) { urgencyLabel = "Now"; urgencyColor = "#DC2626"; }
+    else if (minsUntil <= 30) { urgencyLabel = `In ${minsUntil} min`; urgencyColor = "#D97706"; }
+    else { urgencyLabel = `In ${Math.floor(minsUntil/60)}h ${minsUntil%60}m`; urgencyColor = "var(--teal-d)"; }
+
+    const phoneClean = (next.phone || "").replace(/\D/g, "");
+    const waLink = phoneClean.length >= 10 ? `https://wa.me/91${phoneClean}?text=${encodeURIComponent("Hi " + next.patientName + "! Just a quick reminder — your appointment is at " + next.slot + ". See you soon. — HealthFirst")}` : "";
+
+    card.style.display = "block";
+    card.innerHTML = `
+      <div style="background:linear-gradient(135deg, var(--teal) 0%, var(--teal-d) 100%);border-radius:var(--r-xl);padding:24px;margin-bottom:20px;color:white;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(13,148,136,0.25)">
+        <div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;background:rgba(255,255,255,0.08);border-radius:50%"></div>
+        <div style="position:relative;z-index:1">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">
+            <div style="flex:1;min-width:240px">
+              <div style="font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;opacity:0.85;margin-bottom:6px">Next Patient</div>
+              <div style="font-family:var(--ff-d);font-size:30px;font-weight:700;line-height:1.1;margin-bottom:4px">${escapeHtml(next.patientName)}</div>
+              <div style="font-size:14px;opacity:0.92">${escapeHtml(next.gender || "")}${next.age ? ", " + escapeHtml(next.age) + " yrs" : ""} · ${escapeHtml(next.reason || "General consultation")}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="background:${urgencyColor};color:white;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:700;display:inline-block;margin-bottom:8px">⏰ ${urgencyLabel}</div>
+              <div style="font-family:var(--ff-d);font-size:24px;font-weight:700">${escapeHtml(next.slot)}</div>
+              <div style="font-size:12px;opacity:0.85">Token ${escapeHtml(next.token)}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:18px;padding-top:18px;border-top:1px solid rgba(255,255,255,0.15);flex-wrap:wrap;align-items:center">
+            <div style="font-size:13px;opacity:0.9">📞 ${escapeHtml(next.phone || "—")}</div>
+            <div style="font-size:13px;opacity:0.9">${next.paymentMethod === "paid_online" ? "✅ Paid online" : "🏥 Pay at clinic"}</div>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              ${phoneClean ? `<a href="${waLink}" target="_blank" style="background:rgba(255,255,255,0.2);color:white;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,0.3)">💬 WhatsApp</a>` : ""}
+              ${phoneClean ? `<a href="tel:${escapeHtml(next.phone)}" style="background:rgba(255,255,255,0.2);color:white;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,0.3)">📞 Call</a>` : ""}
+              <button onclick="showPatientHistory('${escapeHtml(next.phone || "")}','${escapeHtml(next.patientName).replace(/'/g, "\\'")}')" style="background:white;color:var(--teal-d);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:var(--ff)">📋 View History</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /* ─────────────────────────────────────────────
+     FEATURE 3 — PATIENT HISTORY MODAL
+  ───────────────────────────────────────────── */
+  window.showPatientHistory = function (phone, name) {
+    const modal = document.getElementById("patientHistoryModal");
+    if (!modal) return;
+    const all = window._myAllBookings || [];
+    const phoneClean = (phone || "").replace(/\D/g, "");
+    const visits = all.filter(b => (b.phone || "").replace(/\D/g, "") === phoneClean)
+                      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    document.getElementById("phmName").textContent = name || "Patient History";
+    document.getElementById("phmSub").textContent = `📞 ${phone || "—"} · ${visits.length} visit${visits.length === 1 ? "" : "s"} on record`;
+
+    const content = document.getElementById("phmContent");
+    if (visits.length === 0) {
+      content.innerHTML = `<div style="text-align:center;padding:32px;color:var(--navy-m);font-size:14px"><div style="font-size:40px;margin-bottom:10px">🆕</div>This is the patient's first visit.</div>`;
+    } else {
+      // Patient summary
+      const completed = visits.filter(v => v.status === "done");
+      const cancelled = visits.filter(v => v.status === "cancelled");
+      const totalPaid = completed.reduce((s, v) => s + (parseInt(v.fee) || 0), 0);
+      const firstVisit = visits[visits.length - 1];
+      const lastVisit = visits[0];
+      const age = firstVisit.age || "—";
+      const gender = firstVisit.gender || "—";
+
+      content.innerHTML = `
+        <div style="background:var(--bg);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:18px;font-size:13px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+          <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">Age</div><div style="color:var(--navy);font-weight:700">${escapeHtml(age)}</div></div>
+          <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">Gender</div><div style="color:var(--navy);font-weight:700">${escapeHtml(gender)}</div></div>
+          <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">First Visit</div><div style="color:var(--navy);font-weight:700">${escapeHtml(firstVisit.date || "—")}</div></div>
+          <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">Total Visits</div><div style="color:var(--teal);font-weight:700">${completed.length} done${cancelled.length ? " · " + cancelled.length + " cancelled" : ""}</div></div>
+          <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">Total Paid</div><div style="color:var(--teal);font-weight:700">₹${totalPaid.toLocaleString("en-IN")}</div></div>
+        </div>
+        <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--navy);margin-bottom:10px">Visit History</div>
+        ${visits.map(v => {
+          const statusColor = v.status === "done" ? "var(--green)" : v.status === "cancelled" ? "var(--red)" : "var(--amber)";
+          return `
+            <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px">
+                <div style="font-weight:700;color:var(--navy);font-size:14px">${escapeHtml(v.dateDisplay || v.date || "—")} at ${escapeHtml(v.slot || "")}</div>
+                <span style="background:${statusColor};color:white;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;text-transform:uppercase">${escapeHtml(v.status || "—")}</span>
+              </div>
+              <div style="font-size:13px;color:var(--navy-m);line-height:1.5">
+                ${v.reason ? `<strong>Reason:</strong> ${escapeHtml(v.reason)}<br>` : ""}
+                <strong>Fee:</strong> ₹${escapeHtml(v.fee || "0")} · <strong>Token:</strong> ${escapeHtml(v.token || "—")} · ${v.paymentMethod === "paid_online" ? "✅ Paid online" : "🏥 Pay at clinic"}
+              </div>
+            </div>`;
+        }).join("")}
+      `;
+    }
+
+    modal.style.display = "flex";
+  };
+
+  window.closePatientHistory = function () {
+    document.getElementById("patientHistoryModal").style.display = "none";
+  };
+
+  // Click outside to close
+  document.addEventListener("click", function (e) {
+    const modal = document.getElementById("patientHistoryModal");
+    if (modal && e.target === modal) { modal.style.display = "none"; }
+  });
+
+  // Patient records click → opens history
+  document.addEventListener("click", function (e) {
+    const row = e.target.closest("#patientList .appt-item");
+    if (row && row.dataset.phone) {
+      window.showPatientHistory(row.dataset.phone, row.dataset.name || "Patient");
+    }
+  });
+
+  /* ─────────────────────────────────────────────
+     FEATURE 7 — NOTIFICATIONS BELL
+  ───────────────────────────────────────────── */
+  function getLastSeenTimestamp() {
+    try { return parseInt(localStorage.getItem("hf_notifs_last_seen") || "0"); }
+    catch (e) { return 0; }
+  }
+  function setLastSeenTimestamp(ts) {
+    try { localStorage.setItem("hf_notifs_last_seen", String(ts)); } catch (e) {}
+  }
+
+  function renderNotifications(allBookings, reviews) {
+    const list = document.getElementById("notifList");
+    const badge = document.getElementById("notifBadge");
+    if (!list || !badge) return;
+
+    const lastSeen = getLastSeenTimestamp();
+    const now = Date.now();
+    const today = new Date().toISOString().split("T")[0];
+
+    // Build notification items
+    const notifs = [];
+
+    // New bookings (since last seen)
+    allBookings.forEach(b => {
+      const ts = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      if (ts > lastSeen && b.status === "confirmed") {
+        notifs.push({
+          ts,
+          icon: "📅",
+          title: "New booking",
+          body: `${b.patientName} booked ${b.dateDisplay || b.date} at ${b.slot}`,
+          unread: true
+        });
+      }
+      // Recent cancellations
+      if (b.status === "cancelled" && b.cancelledAt) {
+        const cts = b.cancelledAt?.toMillis ? b.cancelledAt.toMillis() : 0;
+        if (cts > lastSeen) {
+          notifs.push({
+            ts: cts,
+            icon: "❌",
+            title: "Booking cancelled",
+            body: `${b.patientName} cancelled (was ${b.dateDisplay} ${b.slot})`,
+            unread: true
+          });
+        }
+      }
+    });
+
+    // New reviews
+    reviews.forEach(r => {
+      const ts = r.createdAt?.toMillis ? r.createdAt.toMillis() : 0;
+      if (ts > lastSeen) {
+        notifs.push({
+          ts,
+          icon: "⭐",
+          title: `${r.rating || 5}-star review`,
+          body: `"${(r.comment || "").slice(0, 80)}${(r.comment || "").length > 80 ? "..." : ""}" — ${r.patientName || "Patient"}`,
+          unread: true
+        });
+      }
+    });
+
+    // Tomorrow's bookings reminder (always show)
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowKey = tomorrow.toISOString().split("T")[0];
+    const tomorrowBookings = allBookings.filter(b => b.date === tomorrowKey && b.status === "confirmed");
+    if (tomorrowBookings.length > 0) {
+      notifs.push({
+        ts: now,
+        icon: "🔔",
+        title: `${tomorrowBookings.length} appointment${tomorrowBookings.length === 1 ? "" : "s"} tomorrow`,
+        body: "Consider sending reminders today.",
+        unread: false
+      });
+    }
+
+    // Sort newest first
+    notifs.sort((a, b) => b.ts - a.ts);
+
+    // Update badge
+    const unreadCount = notifs.filter(n => n.unread).length;
+    if (unreadCount > 0) {
+      badge.style.display = "flex";
+      badge.textContent = unreadCount > 9 ? "9+" : unreadCount;
+    } else {
+      badge.style.display = "none";
+    }
+
+    // Render list
+    if (notifs.length === 0) {
+      list.innerHTML = `<div style="padding:28px 18px;text-align:center;color:var(--navy-m);font-size:13px"><div style="font-size:32px;margin-bottom:8px">📭</div>You're all caught up!</div>`;
+      return;
+    }
+    list.innerHTML = notifs.slice(0, 20).map(n => {
+      const timeAgo = formatTimeAgo(n.ts);
+      return `
+        <div style="padding:12px 18px;border-bottom:1px solid var(--border);${n.unread ? "background:var(--teal-l)" : ""};display:flex;gap:10px;align-items:flex-start">
+          <div style="font-size:20px;flex-shrink:0">${n.icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+              <div style="font-weight:700;color:var(--navy);font-size:13px">${escapeHtml(n.title)}</div>
+              <div style="font-size:11px;color:var(--navy-m);white-space:nowrap">${timeAgo}</div>
+            </div>
+            <div style="font-size:12px;color:var(--navy-m);margin-top:2px;line-height:1.4">${escapeHtml(n.body)}</div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  function formatTimeAgo(ts) {
+    if (!ts) return "";
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  }
+
+  window.toggleNotifications = function () {
+    const dropdown = document.getElementById("notifDropdown");
+    if (!dropdown) return;
+    const willOpen = dropdown.style.display === "none" || !dropdown.style.display;
+    dropdown.style.display = willOpen ? "block" : "none";
+  };
+
+  window.markAllNotificationsRead = function () {
+    setLastSeenTimestamp(Date.now());
+    // Re-render
+    loadTodayQueue();
+    document.getElementById("notifDropdown").style.display = "none";
+  };
+
+  // Close notif dropdown on outside click
+  document.addEventListener("click", function (e) {
+    const dropdown = document.getElementById("notifDropdown");
+    const bell = document.getElementById("notifBell");
+    if (dropdown && bell && !bell.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = "none";
+    }
+  });
 
   window.markDone = async function (id, patientName, phone) {
     await updateBookingStatus(id, "done");
