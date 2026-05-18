@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -128,7 +128,7 @@
             <div id="notifList"></div>
           </div>
         </div>
-        <button class="btn-ghost" onclick="window.print()">🖨 Print Queue</button>
+        <button class="btn-ghost" onclick="printTodayQueue()">🖨 Print Queue</button>
         <button class="btn-primary" onclick="shareMyProfile()">📤 Share My Page</button>
       </div>
     </div>
@@ -496,7 +496,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=38"></script>
+<script src="app.js?v=39"></script>
 <script>
   // Set today's date
   const d = new Date();
