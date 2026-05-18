@@ -2361,6 +2361,9 @@ if (document.getElementById("queue-upcoming")) {
   function _gatherPrescription() {
     const pat = document.getElementById('rxPat')?.value.trim() || '';
     const me = window._currentDoctor || {};
+    // Use the actual Firebase Auth email — that's what Firestore rules compare against.
+    // Falling back to me.email if auth isn't available for some reason.
+    const authUserEmail = (window._auth && window._auth.auth && window._auth.auth.currentUser && window._auth.auth.currentUser.email) || me.email || '';
     const medRows = document.querySelectorAll('#rxMedRows .rx-med-row');
     const medicines = Array.from(medRows).map(row => {
       const inputs = row.querySelectorAll('input');
@@ -2376,7 +2379,7 @@ if (document.getElementById("queue-upcoming")) {
       doctorName: me.name || '',
       doctorSpecialty: me.specialty || '',
       doctorQualification: me.qualification || '',
-      doctorEmail: (me.email || '').toLowerCase(),
+      doctorEmail: authUserEmail, // EXACT auth email — required for Firestore rules to allow write
       bookingId: document.getElementById('rxBookingId')?.value || null,
       patientName: pat,
       patientPhone: (document.getElementById('rxPhone')?.value || '').replace(/\D/g, ''),
