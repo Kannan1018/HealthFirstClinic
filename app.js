@@ -1512,7 +1512,11 @@ if (document.getElementById("queue-upcoming")) {
 
   async function renderTodaysScheduleBox(me) {
     const box = document.getElementById("todaysScheduleBox");
-    if (!box || !me.id) return;
+    if (!box) return;
+    if (!me.id) {
+      box.innerHTML = `<div style="padding:14px 16px;font-size:13px;color:var(--navy-m);text-align:center">🛡️ Admin view — pick a doctor in "My Schedule" tab to view their schedule.</div>`;
+      return;
+    }
     const sched = await loadDoctorSchedule(me.id);
     const today = new Date().toISOString().split("T")[0];
     const weekday = String(new Date().getDay());
@@ -1629,7 +1633,37 @@ if (document.getElementById("queue-upcoming")) {
 
   async function renderTimeline(todayBookings, me) {
     const wrap = document.getElementById("timelineView");
-    if (!wrap || !me.id) return;
+    if (!wrap) return;
+
+    // For admin view (no me.id), show a generic timeline of today's bookings only
+    if (!me.id) {
+      if (todayBookings.length === 0) {
+        wrap.innerHTML = `<div style="text-align:center;padding:24px;color:var(--navy-m);font-size:14px">📭 No bookings today across all doctors.</div>`;
+        return;
+      }
+      const sortedSlots = [...new Set(todayBookings.map(b => b.slot))].filter(Boolean).sort((a, b) => slotToMinutes(a) - slotToMinutes(b));
+      const bookingsBySlot = {};
+      todayBookings.forEach(b => { if (b.slot) { if (!bookingsBySlot[b.slot]) bookingsBySlot[b.slot] = []; bookingsBySlot[b.slot].push(b); } });
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+
+      wrap.innerHTML = `
+        <div style="background:var(--amber-l);padding:10px 14px;border-radius:var(--r);font-size:12px;color:#92400E;margin-bottom:14px">🛡️ Admin view — showing all doctors' bookings today.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${sortedSlots.map(slot => {
+          const slotMins = slotToMinutes(slot);
+          const isPast = slotMins < nowMins - 15;
+          const isCurrent = !isPast && slotMins <= nowMins + 30;
+          const bookings = bookingsBySlot[slot];
+          const count = bookings.length;
+          const bg = isCurrent ? "var(--teal)" : (isPast ? "var(--navy-m)" : "var(--teal-d)");
+          return `<div title="${escapeHtml(slot)} — ${count} booking${count === 1 ? "" : "s"}" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px">
+            <div style="width:100%;height:36px;background:${bg};color:white;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${count}</div>
+            <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot.replace(/:00 /, ' ').replace(' AM', 'a').replace(' PM', 'p'))}</div>
+          </div>`;
+        }).join("")}</div>
+        <div style="margin-top:10px;font-size:11px;color:var(--navy-m);text-align:center">Numbers show how many bookings at each slot</div>`;
+      return;
+    }
 
     const sched = await loadDoctorSchedule(me.id);
     const today = new Date().toISOString().split("T")[0];
