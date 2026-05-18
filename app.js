@@ -1286,7 +1286,7 @@ if (document.getElementById("docList")) {
       image: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏥</text></svg>",
       prefill: { name: formData.name, contact: formData.phone },
       notes: { doctor: selectedDoc.name, date: formData.dateStr, slot: selectedSlot, token: formData.token },
-      theme: { color: "#0D9488" },
+      theme: { color: "#4F46E5" },
       handler: async function (response) {
         await finalizeBooking(formData, "confirmed", "paid_online", {
           razorpay_payment_id: response.razorpay_payment_id, amount: selectedDoc.fee
@@ -1778,7 +1778,7 @@ if (document.getElementById("queue-upcoming")) {
 
     card.style.display = "block";
     card.innerHTML = `
-      <div style="background:linear-gradient(135deg, var(--teal) 0%, var(--teal-d) 100%);border-radius:var(--r-xl);padding:24px;margin-bottom:20px;color:white;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(13,148,136,0.25)">
+      <div style="background:linear-gradient(135deg, var(--teal) 0%, var(--teal-d) 100%);border-radius:var(--r-xl);padding:24px;margin-bottom:20px;color:white;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(79,70,229,0.25)">
         <div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;background:rgba(255,255,255,0.08);border-radius:50%"></div>
         <div style="position:relative;z-index:1">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">
