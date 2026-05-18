@@ -2264,7 +2264,6 @@ if (document.getElementById("queue-upcoming")) {
 
   window.markDone = async function (id, patientName, phone) {
     console.log("[markDone called]", { id, patientName, phone });
-    alert("🟢 markDone called for booking ID: " + id + "\n\n(This is a debug alert — click OK to continue)");
     if (!id) { alert("⚠️ No booking ID — can't mark as done."); return; }
     const result = await updateBookingStatus(id, "done");
     if (!result.ok) {
@@ -2285,7 +2284,6 @@ if (document.getElementById("queue-upcoming")) {
 
   window.cancelAppt = async function (id) {
     console.log("[cancelAppt called]", { id });
-    alert("🔴 cancelAppt called for booking ID: " + id + "\n\n(This is a debug alert — click OK to continue)");
     if (!id) { alert("⚠️ No booking ID — can't cancel."); return; }
     if (!confirm("Cancel this appointment?")) return;
     const result = await updateBookingStatus(id, "cancelled");
