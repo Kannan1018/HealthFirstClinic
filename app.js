@@ -712,7 +712,7 @@ async function getBookedSlots(doctorName, dateKey) {
 
 async function updateBookingStatus(id, status) {
   if (!firebaseReady) return { ok: false, error: "Database not ready. Please refresh the page." };
-  const { doc, updateDoc, collection, getDocs, query, where } = window._fs;
+  const { doc, updateDoc, collection, getDocs, query, where, getDoc } = window._fs;
   try {
     await updateDoc(doc(db, "bookings", id), { status });
     // If cancelled, also free up the public slot
@@ -728,7 +728,17 @@ async function updateBookingStatus(id, status) {
     return { ok: true };
   } catch (e) {
     console.error("updateStatus:", e);
-    return { ok: false, error: e.message || String(e) };
+    // Fetch diagnostic info so the user can see why permission was denied
+    let diag = "";
+    try {
+      const authEmail = (window._auth && window._auth.auth && window._auth.auth.currentUser && window._auth.auth.currentUser.email) || "(not signed in)";
+      const bookingSnap = await getDoc(doc(db, "bookings", id));
+      const bookingData = bookingSnap.exists() ? bookingSnap.data() : null;
+      const bookingDoctorEmail = bookingData ? (bookingData.doctorEmail || "(empty)") : "(booking not found)";
+      const isMatch = authEmail.toLowerCase().trim() === String(bookingDoctorEmail).toLowerCase().trim();
+      diag = `\n\n── DIAGNOSTIC ──\nYou're logged in as: ${authEmail}\nBooking's doctor email: ${bookingDoctorEmail}\nEmails match: ${isMatch ? "YES" : "NO ❌"}\n\nFix: Make sure the doctor record's email field exactly matches the email you log in with (lowercase, no spaces).`;
+    } catch (diagErr) { diag = "\n\n(Could not fetch diagnostic info: " + diagErr.message + ")"; }
+    return { ok: false, error: (e.message || String(e)) + diag };
   }
 }
 
