@@ -711,7 +711,7 @@ async function getBookedSlots(doctorName, dateKey) {
 }
 
 async function updateBookingStatus(id, status) {
-  if (!firebaseReady) return;
+  if (!firebaseReady) return { ok: false, error: "Database not ready. Please refresh the page." };
   const { doc, updateDoc, collection, getDocs, query, where } = window._fs;
   try {
     await updateDoc(doc(db, "bookings", id), { status });
@@ -725,7 +725,11 @@ async function updateBookingStatus(id, status) {
         }
       } catch (slotErr) { console.warn("bookedSlots cancel failed:", slotErr); }
     }
-  } catch (e) { console.error("updateStatus:", e); }
+    return { ok: true };
+  } catch (e) {
+    console.error("updateStatus:", e);
+    return { ok: false, error: e.message || String(e) };
+  }
 }
 
 /* ─── Doctor CRUD ─── */
@@ -2113,20 +2117,31 @@ if (document.getElementById("queue-upcoming")) {
   });
 
   window.markDone = async function (id, patientName, phone) {
-    await updateBookingStatus(id, "done");
+    const result = await updateBookingStatus(id, "done");
+    if (!result.ok) {
+      alert("❌ Couldn't mark as done.\n\n" + (result.error || "Unknown error") + "\n\nThis is usually a Firestore permissions issue — please check your firestore.rules in Firebase Console.");
+      return;
+    }
     if (phone && phone.length >= 10) {
       const feedbackUrl = `${window.location.origin}/book.html?feedback=${id}`;
       const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today. Please share your feedback: ${feedbackUrl}`);
       const waLink = `https://wa.me/91${phone}?text=${msg}`;
       const sendWA = confirm(`✅ Appointment marked as done!\n\nSend a WhatsApp feedback request to ${patientName}?`);
       if (sendWA) window.open(waLink, "_blank");
+    } else {
+      alert("✅ Appointment marked as done!");
     }
     loadTodayQueue(); // refresh all data
   };
 
   window.cancelAppt = async function (id) {
     if (!confirm("Cancel this appointment?")) return;
-    await updateBookingStatus(id, "cancelled");
+    const result = await updateBookingStatus(id, "cancelled");
+    if (!result.ok) {
+      alert("❌ Couldn't cancel.\n\n" + (result.error || "Unknown error") + "\n\nThis is usually a Firestore permissions issue — please check your firestore.rules in Firebase Console.");
+      return;
+    }
+    alert("✅ Appointment cancelled.");
     loadTodayQueue(); // refresh all data
   };
 
