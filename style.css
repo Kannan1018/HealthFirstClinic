@@ -449,9 +449,9 @@ h1 em {
 }
 .ph-sub { font-size: 17px; color: var(--navy-m); max-width: 560px; line-height: 1.6; }
 
-.book-layout { display: grid; grid-template-columns: 340px 1fr; gap: 28px; padding: 36px 0 60px; }
+.book-layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 28px; padding: 36px 0 60px; }
 .book-left { }
-.book-right { }
+.book-right { min-width: 0; }
 .bcard { background: var(--white); border-radius: var(--r-xl); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-md); margin-bottom: 20px; }
 .bcard-title { font-size: 13px; font-weight: 700; color: var(--navy-m); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 14px; }
 
