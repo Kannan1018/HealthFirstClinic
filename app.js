@@ -1578,31 +1578,38 @@ if (document.getElementById("queue-upcoming")) {
           </div>
         </div>
         <div class="ai-actions">
-          <button class="ai-btn done queue-done-btn" data-id="${escapeHtml(b.id)}" data-name="${escapeHtml(b.patientName || "")}" data-phone="${escapeHtml(phoneAttr)}">✓ Done</button>
-          <button class="ai-btn cancel queue-cancel-btn" data-id="${escapeHtml(b.id)}">✗ Cancel</button>
+          <button type="button" class="ai-btn done queue-done-btn" data-id="${escapeHtml(b.id)}" data-name="${escapeHtml(b.patientName || "")}" data-phone="${escapeHtml(phoneAttr)}">✓ Done</button>
+          <button type="button" class="ai-btn cancel queue-cancel-btn" data-id="${escapeHtml(b.id)}">✗ Cancel</button>
         </div>
       </div>`;
     }).join("");
 
-    // Wire up via event delegation — robust against any character in names/IDs
-    container.onclick = function (ev) {
-      const doneBtn = ev.target.closest(".queue-done-btn");
-      if (doneBtn) {
-        console.log("[Done clicked]", doneBtn.dataset);
-        window.markDone(doneBtn.dataset.id, doneBtn.dataset.name, doneBtn.dataset.phone);
-        return;
-      }
-      const cancelBtn = ev.target.closest(".queue-cancel-btn");
-      if (cancelBtn) {
-        console.log("[Cancel clicked]", cancelBtn.dataset);
-        window.cancelAppt(cancelBtn.dataset.id);
-        return;
-      }
-      const histTrigger = ev.target.closest(".patient-history-trigger");
-      if (histTrigger) {
-        window.showPatientHistory(histTrigger.dataset.phone, histTrigger.dataset.name);
-      }
-    };
+    // Attach click listener DIRECTLY to each button (most reliable)
+    container.querySelectorAll(".queue-done-btn").forEach(btn => {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        const id = btn.getAttribute("data-id");
+        const name = btn.getAttribute("data-name");
+        const phone = btn.getAttribute("data-phone");
+        console.log("[Done clicked]", { id, name, phone });
+        window.markDone(id, name, phone);
+      });
+    });
+    container.querySelectorAll(".queue-cancel-btn").forEach(btn => {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        const id = btn.getAttribute("data-id");
+        console.log("[Cancel clicked]", { id });
+        window.cancelAppt(id);
+      });
+    });
+    container.querySelectorAll(".patient-history-trigger").forEach(el => {
+      el.addEventListener("click", function () {
+        const phone = el.getAttribute("data-phone");
+        const name = el.getAttribute("data-name");
+        if (window.showPatientHistory) window.showPatientHistory(phone, name);
+      });
+    });
   }
 
   function renderQueueStatus(todayBookings) {
@@ -2257,6 +2264,7 @@ if (document.getElementById("queue-upcoming")) {
 
   window.markDone = async function (id, patientName, phone) {
     console.log("[markDone called]", { id, patientName, phone });
+    alert("🟢 markDone called for booking ID: " + id + "\n\n(This is a debug alert — click OK to continue)");
     if (!id) { alert("⚠️ No booking ID — can't mark as done."); return; }
     const result = await updateBookingStatus(id, "done");
     if (!result.ok) {
@@ -2277,6 +2285,7 @@ if (document.getElementById("queue-upcoming")) {
 
   window.cancelAppt = async function (id) {
     console.log("[cancelAppt called]", { id });
+    alert("🔴 cancelAppt called for booking ID: " + id + "\n\n(This is a debug alert — click OK to continue)");
     if (!id) { alert("⚠️ No booking ID — can't cancel."); return; }
     if (!confirm("Cancel this appointment?")) return;
     const result = await updateBookingStatus(id, "cancelled");
