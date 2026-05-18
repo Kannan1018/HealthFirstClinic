@@ -82,18 +82,62 @@ const ALL_SLOTS = [
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 function defaultWeeklyPattern() {
-  // Default: working Mon-Sat with morning + evening sessions; Sun off
-  const standardSlots = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
-                         "5:00 PM","5:30 PM","6:00 PM","6:30 PM","7:00 PM","7:30 PM"];
+  // Default: Mon-Sat with working hours; Sun off
+  // New schema per day: { isOff, workingStart, workingEnd, slotLength, excludedSlots }
+  const standard = { isOff: false, workingStart: "09:00", workingEnd: "13:00", slotLength: 30, excludedSlots: [] };
   return {
-    "0": [],
-    "1": [...standardSlots],
-    "2": [...standardSlots],
-    "3": [...standardSlots],
-    "4": [...standardSlots],
-    "5": [...standardSlots],
-    "6": [...standardSlots]
+    "0": { isOff: true, workingStart: "09:00", workingEnd: "13:00", slotLength: 30, excludedSlots: [] },
+    "1": { ...standard },
+    "2": { ...standard },
+    "3": { ...standard },
+    "4": { ...standard },
+    "5": { ...standard },
+    "6": { ...standard }
   };
+}
+
+/* ─── Time helpers ─── */
+function time24ToMinutes(t24) {
+  // "09:30" → 570
+  if (!t24) return 0;
+  const [h, m] = t24.split(":").map(n => parseInt(n) || 0);
+  return h * 60 + m;
+}
+
+function minutesToSlotLabel(mins) {
+  // 570 → "9:30 AM"
+  let h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return `${h}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+function generateSlotsFromWindow(workingStart, workingEnd, slotMinutes) {
+  // Returns array of slot label strings, e.g. ["9:00 AM","9:20 AM",...]
+  const startMins = time24ToMinutes(workingStart);
+  const endMins = time24ToMinutes(workingEnd);
+  const step = parseInt(slotMinutes) || 30;
+  if (startMins >= endMins || step <= 0) return [];
+  const slots = [];
+  for (let t = startMins; t + step <= endMins; t += step) {
+    slots.push(minutesToSlotLabel(t));
+  }
+  return slots;
+}
+
+/* Backwards-compatible: returns the array of ACTIVE slot labels for a day.
+   Handles both the old array format and the new object format. */
+function getActiveSlotsForDay(dayData) {
+  if (!dayData) return [];
+  // Old format: array of slot strings (no day-off concept; empty array = off)
+  if (Array.isArray(dayData)) return dayData;
+  // New format: object with workingStart/workingEnd/slotLength/excludedSlots
+  if (dayData.isOff) return [];
+  const all = generateSlotsFromWindow(dayData.workingStart, dayData.workingEnd, dayData.slotLength);
+  const excluded = new Set(dayData.excludedSlots || []);
+  return all.filter(s => !excluded.has(s));
 }
 
 /* ═══════════════════════════════════
@@ -1178,7 +1222,7 @@ if (document.getElementById("docList")) {
     }
 
     // 4. Get available slots for this weekday
-    const allowedSlots = schedule.weeklyPattern[weekday] || [];
+    const allowedSlots = getActiveSlotsForDay(schedule.weeklyPattern[weekday]);
     if (allowedSlots.length === 0) {
       grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;font-size:14px;color:var(--navy-m);background:var(--bg);border-radius:var(--r-lg)">📅 Doctor doesn't see patients on ${DAY_NAMES[parseInt(weekday)]}s. Please pick another date.</div>`;
       return;
@@ -1520,7 +1564,7 @@ if (document.getElementById("queue-upcoming")) {
     const sched = await loadDoctorSchedule(me.id);
     const today = new Date().toISOString().split("T")[0];
     const weekday = String(new Date().getDay());
-    const slots = sched.weeklyPattern[weekday] || [];
+    const slots = getActiveSlotsForDay(sched.weeklyPattern[weekday]);
     const isBlocked = (sched.blockedDates || []).includes(today);
 
     if (isBlocked) {
@@ -1668,7 +1712,7 @@ if (document.getElementById("queue-upcoming")) {
     const sched = await loadDoctorSchedule(me.id);
     const today = new Date().toISOString().split("T")[0];
     const weekday = String(new Date().getDay());
-    const todaySlots = sched.weeklyPattern[weekday] || [];
+    const todaySlots = getActiveSlotsForDay(sched.weeklyPattern[weekday]);
     const isBlocked = (sched.blockedDates || []).includes(today);
 
     if (isBlocked) {
@@ -2116,14 +2160,37 @@ if (document.getElementById("queue-upcoming")) {
       { num: "6", name: "Saturday" },
       { num: "0", name: "Sunday" }
     ];
+    const slotLengths = [10, 15, 20, 30, 45, 60];
 
-    // Compute the next upcoming date for each weekday (including today if it matches)
+    // Normalize legacy data → new schema if needed
+    days.forEach(d => {
+      const v = currentScheduleData.weeklyPattern[d.num];
+      if (Array.isArray(v)) {
+        // Legacy array → convert into the new object format with sensible defaults
+        currentScheduleData.weeklyPattern[d.num] = {
+          isOff: v.length === 0,
+          workingStart: "09:00",
+          workingEnd: "13:00",
+          slotLength: 30,
+          excludedSlots: []
+        };
+      } else if (!v || typeof v !== "object") {
+        currentScheduleData.weeklyPattern[d.num] = { isOff: true, workingStart: "09:00", workingEnd: "13:00", slotLength: 30, excludedSlots: [] };
+      } else {
+        // Fill in any missing fields
+        if (v.workingStart === undefined) v.workingStart = "09:00";
+        if (v.workingEnd === undefined) v.workingEnd = "13:00";
+        if (v.slotLength === undefined) v.slotLength = 30;
+        if (v.excludedSlots === undefined) v.excludedSlots = [];
+        if (v.isOff === undefined) v.isOff = false;
+      }
+    });
+
     function getUpcomingDateForWeekday(targetDayNum) {
       const today = new Date();
       const todayDayNum = today.getDay();
       const targetNum = parseInt(targetDayNum);
-      let diff = (targetNum - todayDayNum + 7) % 7;
-      // diff of 0 means today; show today as the upcoming date for that weekday
+      const diff = (targetNum - todayDayNum + 7) % 7;
       const upcoming = new Date(today);
       upcoming.setDate(today.getDate() + diff);
       return upcoming;
@@ -2140,45 +2207,128 @@ if (document.getElementById("queue-upcoming")) {
     }
 
     grid.innerHTML = days.map(d => {
-      const activeSlots = new Set(currentScheduleData.weeklyPattern[d.num] || []);
-      const isOff = activeSlots.size === 0;
+      const day = currentScheduleData.weeklyPattern[d.num];
+      const isOff = !!day.isOff;
+      const activeSlots = getActiveSlotsForDay(day);
+      const allGenerated = generateSlotsFromWindow(day.workingStart, day.workingEnd, day.slotLength);
+      const excluded = new Set(day.excludedSlots || []);
       const upcomingDate = getUpcomingDateForWeekday(d.num);
       const dateLabel = formatUpcomingDate(upcomingDate);
+
+      const slotPills = allGenerated.length === 0
+        ? `<div style="font-size:12px;color:var(--red);padding:8px 0">⚠️ End time must be after start time (with room for at least one slot).</div>`
+        : allGenerated.map(s => {
+            const isActive = !excluded.has(s);
+            return `<button onclick="toggleDaySlot('${d.num}','${s.replace(/'/g, "\\'")}')" style="padding:7px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap;${isActive ? 'background:var(--teal);color:var(--cream);border:1.5px solid var(--teal)' : 'background:white;color:var(--navy-h);border:1.5px solid var(--border-md);text-decoration:line-through'}">${s}</button>`;
+          }).join("");
+
       return `
-        <div style="margin-bottom:18px;background:var(--bg);border-radius:var(--r-lg);padding:14px 16px;border:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="margin-bottom:14px;background:var(--white);border-radius:var(--r-lg);padding:18px;border:1px solid var(--border);${isOff ? 'opacity:0.7' : ''}">
+          <!-- Day header -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
             <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-              <div style="font-family:var(--ff-d);font-size:17px;font-weight:600;color:var(--navy);letter-spacing:-0.01em">${d.name}</div>
+              <div style="font-family:var(--ff-d);font-size:18px;font-weight:600;color:var(--navy);letter-spacing:-0.01em">${d.name}</div>
               <div style="font-size:12px;color:var(--navy-m);font-weight:600">📅 ${dateLabel}</div>
-              ${isOff ? '<span style="font-size:11px;background:var(--red-l);color:var(--red);padding:2px 10px;border-radius:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em">Day off</span>' : '<span style="font-size:11px;background:var(--teal-l);color:var(--teal-d);padding:2px 10px;border-radius:14px;font-weight:700">' + activeSlots.size + ' slot' + (activeSlots.size === 1 ? '' : 's') + '</span>'}
+              ${isOff
+                ? '<span style="font-size:11px;background:var(--red-l);color:var(--red);padding:3px 10px;border-radius:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em">Day off</span>'
+                : `<span style="font-size:11px;background:var(--teal-l);color:var(--teal-d);padding:3px 10px;border-radius:14px;font-weight:700">${activeSlots.length} slot${activeSlots.length === 1 ? '' : 's'}</span>`}
             </div>
-            <div style="display:flex;gap:6px">
-              <button onclick="toggleAllSlots('${d.num}', true)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Select all</button>
-              <button onclick="toggleAllSlots('${d.num}', false)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Clear all</button>
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--navy-m)">
+              <input type="checkbox" ${isOff ? 'checked' : ''} onchange="setDayOff('${d.num}', this.checked)" style="cursor:pointer;width:14px;height:14px;accent-color:var(--red)"> Day off
+            </label>
+          </div>
+
+          ${!isOff ? `
+            <!-- Controls row: working hours + slot length -->
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:var(--r);border:1px solid var(--border)">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:13px;color:var(--navy-m);font-weight:600">Hours</span>
+                <input type="time" value="${day.workingStart}" onchange="setDayHours('${d.num}','start',this.value)" style="padding:6px 10px;border:1px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:13px;background:white">
+                <span style="font-size:13px;color:var(--navy-m)">to</span>
+                <input type="time" value="${day.workingEnd}" onchange="setDayHours('${d.num}','end',this.value)" style="padding:6px 10px;border:1px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:13px;background:white">
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:13px;color:var(--navy-m);font-weight:600">Each visit</span>
+                <select onchange="setDaySlotLength('${d.num}', this.value)" style="padding:6px 10px;border:1px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:13px;background:white;cursor:pointer">
+                  ${slotLengths.map(n => `<option value="${n}" ${day.slotLength == n ? 'selected' : ''}>${n} min</option>`).join("")}
+                </select>
+              </div>
+              <div style="margin-left:auto;display:flex;gap:6px">
+                <button onclick="setAllDaySlots('${d.num}', true)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Enable all</button>
+                <button onclick="setAllDaySlots('${d.num}', false)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Disable all</button>
+              </div>
             </div>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px">
-            ${ALL_SLOTS.map(s => {
-              const isActive = activeSlots.has(s);
-              return `<button onclick="toggleSlot('${d.num}','${s}')" style="padding:6px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--ff);transition:all .15s;${isActive ? 'background:var(--teal);color:var(--cream);border:1.5px solid var(--teal)' : 'background:white;color:var(--navy-s);border:1.5px solid var(--border-md)'}">${s}</button>`;
-            }).join("")}
-          </div>
+
+            <!-- Generated slot pills -->
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${slotPills}
+            </div>
+            ${allGenerated.length > 0 ? `<div style="margin-top:10px;font-size:11px;color:var(--navy-h);font-style:italic">Tap any slot to enable/disable. Disabled slots won't appear to patients.</div>` : ''}
+          ` : `
+            <div style="font-size:13px;color:var(--navy-m);padding:8px 0">You're not seeing patients on this day. Uncheck "Day off" above to enable bookings.</div>
+          `}
         </div>`;
     }).join("");
   }
 
-  window.toggleSlot = function (dayNum, slot) {
-    if (!currentScheduleData.weeklyPattern[dayNum]) currentScheduleData.weeklyPattern[dayNum] = [];
-    const idx = currentScheduleData.weeklyPattern[dayNum].indexOf(slot);
-    if (idx === -1) currentScheduleData.weeklyPattern[dayNum].push(slot);
-    else currentScheduleData.weeklyPattern[dayNum].splice(idx, 1);
+  /* ── Editor handlers ── */
+  function ensureDayObject(dayNum) {
+    let v = currentScheduleData.weeklyPattern[dayNum];
+    if (Array.isArray(v) || !v || typeof v !== "object") {
+      currentScheduleData.weeklyPattern[dayNum] = {
+        isOff: Array.isArray(v) ? v.length === 0 : true,
+        workingStart: "09:00", workingEnd: "13:00", slotLength: 30, excludedSlots: []
+      };
+    }
+    return currentScheduleData.weeklyPattern[dayNum];
+  }
+
+  window.setDayOff = function (dayNum, isOff) {
+    const day = ensureDayObject(dayNum);
+    day.isOff = !!isOff;
     renderScheduleGrid();
   };
 
-  window.toggleAllSlots = function (dayNum, selectAll) {
-    currentScheduleData.weeklyPattern[dayNum] = selectAll ? [...ALL_SLOTS] : [];
+  window.setDayHours = function (dayNum, which, value) {
+    const day = ensureDayObject(dayNum);
+    if (which === "start") day.workingStart = value;
+    else if (which === "end") day.workingEnd = value;
+    // Drop excluded slots that are no longer in the generated range
+    const newRange = new Set(generateSlotsFromWindow(day.workingStart, day.workingEnd, day.slotLength));
+    day.excludedSlots = (day.excludedSlots || []).filter(s => newRange.has(s));
     renderScheduleGrid();
   };
+
+  window.setDaySlotLength = function (dayNum, mins) {
+    const day = ensureDayObject(dayNum);
+    day.slotLength = parseInt(mins) || 30;
+    // Slot labels change when length changes — clear exclusions
+    day.excludedSlots = [];
+    renderScheduleGrid();
+  };
+
+  window.toggleDaySlot = function (dayNum, slotLabel) {
+    const day = ensureDayObject(dayNum);
+    if (!day.excludedSlots) day.excludedSlots = [];
+    const idx = day.excludedSlots.indexOf(slotLabel);
+    if (idx === -1) day.excludedSlots.push(slotLabel);
+    else day.excludedSlots.splice(idx, 1);
+    renderScheduleGrid();
+  };
+
+  window.setAllDaySlots = function (dayNum, enableAll) {
+    const day = ensureDayObject(dayNum);
+    if (enableAll) {
+      day.excludedSlots = [];
+    } else {
+      day.excludedSlots = generateSlotsFromWindow(day.workingStart, day.workingEnd, day.slotLength);
+    }
+    renderScheduleGrid();
+  };
+
+  // Legacy aliases (in case anything else calls them)
+  window.toggleSlot = window.toggleDaySlot;
+  window.toggleAllSlots = window.setAllDaySlots;
 
   function renderBlockedDatesList() {
     const list = document.getElementById("blockedDatesList");
