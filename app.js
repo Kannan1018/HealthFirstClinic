@@ -140,6 +140,19 @@ function getActiveSlotsForDay(dayData) {
   return all.filter(s => !excluded.has(s));
 }
 
+function slotToMinutes(slot) {
+  // "9:30 AM" → 570 (used to sort and to compare against current time)
+  if (!slot) return 0;
+  const m = slot.match(/^(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return 0;
+  let h = parseInt(m[1]);
+  const min = parseInt(m[2]);
+  const isPM = m[3].toUpperCase() === "PM";
+  if (h === 12) h = isPM ? 12 : 0;
+  else if (isPM) h += 12;
+  return h * 60 + min;
+}
+
 /* ═══════════════════════════════════
    i18n — Simple multi-language support
 ═══════════════════════════════════ */
@@ -1181,25 +1194,53 @@ if (document.getElementById("docList")) {
     return d.toISOString().split("T")[0];
   }
 
-  function buildDatePicker() {
+  async function buildDatePicker() {
     const scroller = document.getElementById("dateScroller");
     if (!scroller) return;
-    scroller.innerHTML = "";
+    scroller.innerHTML = `<div style="padding:8px 4px;font-size:13px;color:var(--navy-m)">⏳ Loading available dates...</div>`;
+    if (!selectedDoc) { scroller.innerHTML = ""; return; }
+
+    // Load this doctor's schedule so we only show dates they actually work
+    const schedule = await loadDoctorSchedule(selectedDoc.id);
+    const blockedSet = new Set(schedule.blockedDates || []);
+
     const today = new Date();
-    for (let i = 0; i < 14; i++) {
+    const availableDates = []; // {idx, date}
+    // Look ahead up to 30 days, take the first 14 that are workable
+    for (let i = 0; i < 30 && availableDates.length < 14; i++) {
       const d = new Date(today); d.setDate(today.getDate() + i);
+      const weekday = String(d.getDay());
+      const dayPattern = schedule.weeklyPattern[weekday];
+      const slots = getActiveSlotsForDay(dayPattern);
+      if (slots.length === 0) continue; // day off / no slots configured
+      const dateKey = `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
+      if (blockedSet.has(dateKey)) continue;
+      availableDates.push({ idx: i, date: d });
+    }
+
+    // If the current selectedDateIdx is no longer in the available list, snap to the first one
+    if (!availableDates.find(x => x.idx === selectedDateIdx) && availableDates.length > 0) {
+      selectedDateIdx = availableDates[0].idx;
+      selectedSlot = null;
+    }
+
+    scroller.innerHTML = "";
+    if (availableDates.length === 0) {
+      scroller.innerHTML = `<div style="padding:18px;text-align:center;font-size:14px;color:var(--navy-m);width:100%">📅 This doctor has not set their availability yet. Please check back later.</div>`;
+      return;
+    }
+
+    availableDates.forEach(({ idx, date: d }) => {
       const chip = document.createElement("button");
-      chip.className = "date-chip" + (i === selectedDateIdx ? " selected" : "");
+      chip.className = "date-chip" + (idx === selectedDateIdx ? " selected" : "");
       chip.innerHTML = `<span class="dc-day">${DAYS[d.getDay()]}</span><span class="dc-num">${d.getDate()}</span>`;
       chip.addEventListener("click", () => {
-        selectedDateIdx = i; selectedSlot = null;
+        selectedDateIdx = idx; selectedSlot = null;
         buildDatePicker(); buildTimeSlots(); updateSummaryPanel();
       });
       scroller.appendChild(chip);
-    }
+    });
   }
-
-  const ALL_SLOTS_LOCAL = ALL_SLOTS; // reference the global
 
   async function buildTimeSlots() {
     const grid = document.getElementById("timeGrid");
@@ -1221,7 +1262,7 @@ if (document.getElementById("docList")) {
       return;
     }
 
-    // 4. Get available slots for this weekday
+    // 4. Get available slots for this weekday (already returns slots in chronological order)
     const allowedSlots = getActiveSlotsForDay(schedule.weeklyPattern[weekday]);
     if (allowedSlots.length === 0) {
       grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;font-size:14px;color:var(--navy-m);background:var(--bg);border-radius:var(--r-lg)">📅 Doctor doesn't see patients on ${DAY_NAMES[parseInt(weekday)]}s. Please pick another date.</div>`;
@@ -1231,10 +1272,22 @@ if (document.getElementById("docList")) {
     // 5. Get booked slots
     const bookedSlots = await getBookedSlots(selectedDoc.name, dateKey);
 
-    // 6. Render slots — order based on global ALL_SLOTS for consistency
+    // 6. Filter out past slots if booking for today
+    const isToday = selectedDateIdx === 0;
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const futureSlots = isToday
+      ? allowedSlots.filter(s => slotToMinutes(s) > nowMins)
+      : allowedSlots;
+
+    if (futureSlots.length === 0) {
+      grid.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;font-size:14px;color:var(--navy-m);background:var(--bg);border-radius:var(--r-lg)">⏰ All of today's slots have already passed. Please pick another date.</div>`;
+      return;
+    }
+
+    // 7. Render — use the doctor's actual slot list, sorted chronologically
     grid.innerHTML = "";
-    const slotsToShow = ALL_SLOTS_LOCAL.filter(s => allowedSlots.includes(s));
-    slotsToShow.forEach(slot => {
+    futureSlots.forEach(slot => {
       const isBooked = bookedSlots.includes(slot);
       const btn = document.createElement("button");
       btn.className = "time-slot" + (isBooked ? " booked" : slot === selectedSlot ? " selected" : "");
@@ -1662,18 +1715,6 @@ if (document.getElementById("queue-upcoming")) {
   /* ─────────────────────────────────────────────
      FEATURE 1 — TODAY'S TIMELINE
   ───────────────────────────────────────────── */
-  function slotToMinutes(slot) {
-    // Convert "9:30 AM" → 570
-    if (!slot) return 0;
-    const m = slot.match(/^(\d+):(\d+)\s*(AM|PM)/i);
-    if (!m) return 0;
-    let h = parseInt(m[1]);
-    const min = parseInt(m[2]);
-    const isPM = m[3].toUpperCase() === "PM";
-    if (h === 12) h = isPM ? 12 : 0;
-    else if (isPM) h += 12;
-    return h * 60 + min;
-  }
 
   async function renderTimeline(todayBookings, me) {
     const wrap = document.getElementById("timelineView");
