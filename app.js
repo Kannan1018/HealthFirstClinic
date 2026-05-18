@@ -2367,7 +2367,13 @@ if (document.getElementById("queue-upcoming")) {
     if (btn) { btn.disabled = true; btn.textContent = "Saving..."; }
     const ok = await saveDoctorSchedule(currentScheduleDoctorId, currentScheduleData);
     if (btn) { btn.disabled = false; btn.textContent = "💾 Save Schedule"; }
-    alert(ok ? "✅ Schedule saved! Changes apply to all future bookings." : "❌ Failed to save. Please try again.");
+    if (ok) {
+      // Refresh the dashboard so Today's Timeline and Today's Schedule reflect the new pattern
+      try { if (typeof loadTodayQueue === "function") await loadTodayQueue(); } catch (e) { console.warn(e); }
+      alert("✅ Schedule saved! Today's Timeline and your booking page are now updated.");
+    } else {
+      alert("❌ Failed to save. Please try again.");
+    }
   };
 }
 
