@@ -1568,22 +1568,41 @@ if (document.getElementById("queue-upcoming")) {
     }
     container.innerHTML = confirmed.map((b, i) => {
       const phoneAttr = (b.phone || "").replace(/\D/g, "");
-      const nameAttr = escapeHtml(b.patientName || "Patient").replace(/'/g, "&#39;");
       return `
       <div class="appt-item" id="appt-${b.id}">
         <div class="ai-token">${i + 1}</div>
-        <div class="ai-info" style="cursor:pointer" onclick="showPatientHistory('${phoneAttr}','${nameAttr}')">
+        <div class="ai-info patient-history-trigger" style="cursor:pointer" data-phone="${escapeHtml(phoneAttr)}" data-name="${escapeHtml(b.patientName || "Patient")}">
           <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.gender || "")}, ${escapeHtml(b.age || "")} <span style="font-size:11px;color:var(--teal);font-weight:600;margin-left:6px">📋 history</span></div>
           <div class="ai-detail">${escapeHtml(b.slot)} · ${escapeHtml(b.reason || "General consultation")} · Token ${escapeHtml(b.token)} · 📞 ${escapeHtml(b.phone || "—")}
             &nbsp;<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;${b.paymentMethod === "paid_online" ? "background:#ECFDF5;color:#065F46" : "background:#FFF3E0;color:#E65100"}">${b.paymentMethod === "paid_online" ? "✅ Paid" : "🏥 Pay at clinic"}</span>
           </div>
         </div>
         <div class="ai-actions">
-          <button class="ai-btn done" onclick="markDone('${b.id}','${escapeHtml(b.patientName)}','${b.phone || ""}')">✓ Done</button>
-          <button class="ai-btn cancel" onclick="cancelAppt('${b.id}')">✗ Cancel</button>
+          <button class="ai-btn done queue-done-btn" data-id="${escapeHtml(b.id)}" data-name="${escapeHtml(b.patientName || "")}" data-phone="${escapeHtml(phoneAttr)}">✓ Done</button>
+          <button class="ai-btn cancel queue-cancel-btn" data-id="${escapeHtml(b.id)}">✗ Cancel</button>
         </div>
       </div>`;
     }).join("");
+
+    // Wire up via event delegation — robust against any character in names/IDs
+    container.onclick = function (ev) {
+      const doneBtn = ev.target.closest(".queue-done-btn");
+      if (doneBtn) {
+        console.log("[Done clicked]", doneBtn.dataset);
+        window.markDone(doneBtn.dataset.id, doneBtn.dataset.name, doneBtn.dataset.phone);
+        return;
+      }
+      const cancelBtn = ev.target.closest(".queue-cancel-btn");
+      if (cancelBtn) {
+        console.log("[Cancel clicked]", cancelBtn.dataset);
+        window.cancelAppt(cancelBtn.dataset.id);
+        return;
+      }
+      const histTrigger = ev.target.closest(".patient-history-trigger");
+      if (histTrigger) {
+        window.showPatientHistory(histTrigger.dataset.phone, histTrigger.dataset.name);
+      }
+    };
   }
 
   function renderQueueStatus(todayBookings) {
@@ -2237,6 +2256,8 @@ if (document.getElementById("queue-upcoming")) {
   });
 
   window.markDone = async function (id, patientName, phone) {
+    console.log("[markDone called]", { id, patientName, phone });
+    if (!id) { alert("⚠️ No booking ID — can't mark as done."); return; }
     const result = await updateBookingStatus(id, "done");
     if (!result.ok) {
       alert("❌ Couldn't mark as done.\n\n" + (result.error || "Unknown error") + "\n\nThis is usually a Firestore permissions issue — please check your firestore.rules in Firebase Console.");
@@ -2255,6 +2276,8 @@ if (document.getElementById("queue-upcoming")) {
   };
 
   window.cancelAppt = async function (id) {
+    console.log("[cancelAppt called]", { id });
+    if (!id) { alert("⚠️ No booking ID — can't cancel."); return; }
     if (!confirm("Cancel this appointment?")) return;
     const result = await updateBookingStatus(id, "cancelled");
     if (!result.ok) {
