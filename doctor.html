@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="style.css?v=15">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -70,7 +70,6 @@
       <li><a href="index.html">Public Site</a></li>
     </ul>
     <div class="nav-actions">
-      <a href="book.html" class="btn-primary nav-book">View Booking Page</a>
       <button class="burger" id="burger" aria-label="Open menu"><span></span><span></span><span></span></button>
     </div>
   </div>
@@ -130,7 +129,7 @@
           </div>
         </div>
         <button class="btn-ghost" onclick="window.print()">🖨 Print Queue</button>
-        <a href="book.html" class="btn-primary">View Booking Page</a>
+        <button class="btn-primary" onclick="shareMyProfile()">📤 Share My Page</button>
       </div>
     </div>
 
@@ -497,7 +496,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=37"></script>
+<script src="app.js?v=38"></script>
 <script>
   // Set today's date
   const d = new Date();
@@ -624,6 +623,29 @@
   };
 
   function searchPatients(q) { /* live search hook */ }
+
+  // Copy doctor's public profile URL to clipboard for easy sharing
+  window.shareMyProfile = function () {
+    const me = window._currentDoctor || {};
+    if (!me.id) { alert("⚠️ Couldn't find your doctor ID. Please refresh and try again."); return; }
+    const url = new URL(`doctor-profile.html?id=${me.id}`, window.location.href).href;
+    // Try native share first (works great on mobile)
+    if (navigator.share) {
+      navigator.share({
+        title: `Dr. ${me.name || 'My profile'} — HealthFirst`,
+        text: `Book an appointment with Dr. ${me.name || ''} on HealthFirst:`,
+        url: url
+      }).catch(() => {/* user cancelled — ignore */});
+      return;
+    }
+    // Fallback: copy to clipboard
+    navigator.clipboard.writeText(url).then(() => {
+      alert(`✅ Profile link copied!\n\n${url}\n\nPaste it on WhatsApp, social media, or anywhere to let patients book directly with you.`);
+    }).catch(() => {
+      // Last resort: show URL in a prompt for manual copy
+      prompt("Copy this link to share your profile:", url);
+    });
+  };
 </script>
 </body>
 </html>
