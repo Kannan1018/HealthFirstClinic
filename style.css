@@ -820,13 +820,26 @@ h1 em {
   .book-layout { grid-template-columns: 1fr; }
   .footer-grid { grid-template-columns: 1fr; gap: 36px; }
   .footer-links { grid-template-columns: repeat(2,1fr); }
-  .dashboard-layout { grid-template-columns: 1fr; }
-  .sidebar { position: relative; top: 0; height: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
   .kpi-grid { grid-template-columns: repeat(2,1fr); }
   .dash-grid { grid-template-columns: 1fr; }
   .big-kpi-row { grid-template-columns: repeat(2,1fr); }
   .admin-grid { grid-template-columns: 1fr; }
   .time-grid { grid-template-columns: repeat(3,1fr); }
+}
+
+/* Sidebar collapses to top bar only on small phones */
+@media (max-width: 700px) {
+  .dashboard-layout { grid-template-columns: 1fr; }
+  .sidebar {
+    position: relative; top: 0; height: auto;
+    display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px;
+    padding: 12px; border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .sb-doc { width: 100%; margin-bottom: 8px; }
+  .sb-nav { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .sb-link { width: auto; flex: 0 0 auto; padding: 8px 14px; font-size: 13px; }
+  .sb-link.signout-link { margin-top: 0; padding-top: 8px; border-top: none; }
 }
 @media (max-width: 600px) {
   .spec-grid { grid-template-columns: repeat(2,1fr); }
