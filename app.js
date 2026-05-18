@@ -2103,7 +2103,7 @@ if (document.getElementById("queue-upcoming")) {
   /* ─────────────────────────────────────────────
      FEATURE 3 — PATIENT HISTORY MODAL
   ───────────────────────────────────────────── */
-  window.showPatientHistory = function (phone, name) {
+  window.showPatientHistory = async function (phone, name) {
     const modal = document.getElementById("patientHistoryModal");
     if (!modal) return;
     const all = window._myAllBookings || [];
@@ -2115,8 +2115,52 @@ if (document.getElementById("queue-upcoming")) {
     document.getElementById("phmSub").textContent = `📞 ${phone || "—"} · ${visits.length} visit${visits.length === 1 ? "" : "s"} on record`;
 
     const content = document.getElementById("phmContent");
-    if (visits.length === 0) {
+
+    // Fetch prescriptions for this patient (matching phone)
+    let prescriptions = [];
+    try {
+      const { collection, query, where, getDocs } = window._fs;
+      const me = window._currentDoctor || {};
+      // Match by phone; also restrict to this doctor's prescriptions for safety
+      const q = query(
+        collection(db, "prescriptions"),
+        where("patientPhone", "==", phoneClean),
+        where("doctorEmail", "==", (window._auth?.auth?.currentUser?.email) || "")
+      );
+      const qs = await getDocs(q);
+      qs.forEach(d => prescriptions.push({ id: d.id, ...d.data() }));
+      prescriptions.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    } catch (e) {
+      console.warn("Could not fetch prescriptions for patient history:", e);
+    }
+
+    // Render prescription section HTML
+    const prescriptionsHtml = prescriptions.length === 0 ? "" : `
+      <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--navy);margin:22px 0 10px">💊 Prescriptions Written (${prescriptions.length})</div>
+      ${prescriptions.map(p => `
+        <div style="padding:12px 14px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;background:var(--cream)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+            <div style="font-weight:700;color:var(--navy);font-size:14px">📅 ${escapeHtml(p.date || "—")}${p.token ? ' · ' + escapeHtml(p.token) : ''}</div>
+            <button onclick="reprintPrescription('${p.id}')" style="background:var(--teal);color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff)">🖨 Reprint</button>
+          </div>
+          ${p.diagnosis ? `<div style="font-size:13px;color:var(--navy-s);margin-bottom:6px"><strong>Diagnosis:</strong> ${escapeHtml(p.diagnosis)}</div>` : ""}
+          ${p.medicines && p.medicines.length > 0 ? `
+            <div style="font-size:13px;color:var(--navy-s);line-height:1.6">
+              <strong>Medicines:</strong>
+              <ul style="margin:4px 0 0 18px;padding:0">
+                ${p.medicines.map(m => `<li>${escapeHtml(m.name)}${m.dose ? ' — ' + escapeHtml(m.dose) : ''}${m.frequency ? ' (' + escapeHtml(m.frequency) + ')' : ''}</li>`).join("")}
+              </ul>
+            </div>` : ""}
+          ${p.notes ? `<div style="font-size:13px;color:var(--navy-s);margin-top:6px"><strong>Advice:</strong> ${escapeHtml(p.notes)}</div>` : ""}
+          ${p.followup && p.followup !== "No follow-up needed" ? `<div style="font-size:12px;color:var(--teal-d);margin-top:6px;font-weight:600">🔁 Follow-up in: ${escapeHtml(p.followup)}</div>` : ""}
+        </div>
+      `).join("")}
+    `;
+
+    if (visits.length === 0 && prescriptions.length === 0) {
       content.innerHTML = `<div style="text-align:center;padding:32px;color:var(--navy-m);font-size:14px"><div style="font-size:40px;margin-bottom:10px">🆕</div>This is the patient's first visit.</div>`;
+    } else if (visits.length === 0) {
+      content.innerHTML = prescriptionsHtml;
     } else {
       // Patient summary
       const completed = visits.filter(v => v.status === "done");
@@ -2134,8 +2178,10 @@ if (document.getElementById("queue-upcoming")) {
           <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">First Visit</div><div style="color:var(--navy);font-weight:700">${escapeHtml(firstVisit.date || "—")}</div></div>
           <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">Total Visits</div><div style="color:var(--teal);font-weight:700">${completed.length} done${cancelled.length ? " · " + cancelled.length + " cancelled" : ""}</div></div>
           <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">Total Paid</div><div style="color:var(--teal);font-weight:700">₹${totalPaid.toLocaleString("en-IN")}</div></div>
+          <div><div style="color:var(--navy-m);font-size:11px;font-weight:600;text-transform:uppercase;margin-bottom:2px">Prescriptions</div><div style="color:var(--teal);font-weight:700">${prescriptions.length}</div></div>
         </div>
-        <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--navy);margin-bottom:10px">Visit History</div>
+        ${prescriptionsHtml}
+        <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--navy);margin:22px 0 10px">📋 Visit History</div>
         ${visits.map(v => {
           const statusColor = v.status === "done" ? "var(--green)" : v.status === "cancelled" ? "var(--red)" : "var(--amber)";
           return `
@@ -2153,11 +2199,156 @@ if (document.getElementById("queue-upcoming")) {
       `;
     }
 
+    // Cache prescriptions so reprint can find them
+    window._cachedPrescriptions = window._cachedPrescriptions || {};
+    prescriptions.forEach(p => { window._cachedPrescriptions[p.id] = p; });
+
     modal.style.display = "flex";
   };
 
   window.closePatientHistory = function () {
     document.getElementById("patientHistoryModal").style.display = "none";
+  };
+
+  // Reprint a saved prescription (opens print-ready window)
+  window.reprintPrescription = function (prescriptionId) {
+    const cache = window._cachedPrescriptions || {};
+    const p = cache[prescriptionId];
+    if (!p) { alert("Could not load prescription details."); return; }
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Prescription — ${escapeHtml(p.patientName)}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  body { font-family: Georgia, serif; color: #1F2F26; padding: 24px; background: white; }
+  .clinic-header { border-bottom: 3px solid #3D5A4C; padding-bottom: 16px; margin-bottom: 22px; }
+  .clinic-name { font-size: 30px; font-weight: 800; color: #3D5A4C; }
+  .clinic-sub { font-size: 13px; color: #888; margin-top: 2px; }
+  .doctor-block { display: flex; justify-content: space-between; margin-top: 16px; font-size: 13px; flex-wrap: wrap; gap: 10px; }
+  .doc-name { font-weight: 700; font-size: 15px; }
+  .patient-block { background: #F5F1EA; padding: 12px 16px; border-radius: 8px; margin-bottom: 22px; font-size: 13px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  h3 { color: #3D5A4C; font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid #DDE5DB; padding-bottom: 5px; margin-top: 22px; }
+  .med-list { list-style: none; padding: 0; counter-reset: med; }
+  .med-list li { padding: 9px 0 9px 30px; border-bottom: 1px dashed #DDE5DB; font-size: 14px; position: relative; counter-increment: med; }
+  .med-list li::before { content: counter(med) "."; position: absolute; left: 0; font-weight: 700; color: #3D5A4C; }
+  .med-name { font-weight: 700; }
+  .med-detail { color: #666; font-size: 12px; margin-top: 2px; }
+  .notes { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+  .followup-tag { display: inline-block; background: #EEF1ED; color: #3D5A4C; padding: 8px 14px; border-radius: 6px; font-weight: 700; font-size: 13px; margin-top: 12px; }
+  .footer { margin-top: 70px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 11px; }
+  .sign-line { border-top: 1px solid #1F2F26; padding-top: 6px; min-width: 220px; text-align: center; font-size: 12px; font-weight: 600; }
+  @media print { body { padding: 0; } .print-toolbar { display: none; } }
+  .print-toolbar { position: fixed; top: 12px; right: 12px; }
+  .print-toolbar button { padding: 8px 16px; background: #3D5A4C; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+</style></head><body>
+<div class="print-toolbar"><button onclick="window.print()">🖨 Print Now</button></div>
+<div class="clinic-header">
+  <div class="clinic-name">HealthFirst</div>
+  <div class="clinic-sub">Quality healthcare, when you need it</div>
+  <div class="doctor-block">
+    <div>
+      <div class="doc-name">Dr. ${escapeHtml(p.doctorName || '—')}</div>
+      <div style="color:#666">${escapeHtml(p.doctorSpecialty || '')}${p.doctorQualification ? ' · ' + escapeHtml(p.doctorQualification) : ''}</div>
+    </div>
+    <div style="text-align:right">
+      <div><strong>Date:</strong> ${escapeHtml(p.date)}</div>
+      ${p.token ? `<div><strong>Token:</strong> ${escapeHtml(p.token)}</div>` : ''}
+    </div>
+  </div>
+</div>
+<div class="patient-block">
+  <div><strong>Patient:</strong> ${escapeHtml(p.patientName)}</div>
+  ${p.age ? `<div><strong>Age:</strong> ${escapeHtml(p.age)} yrs</div>` : ''}
+  ${p.gender ? `<div><strong>Gender:</strong> ${escapeHtml(p.gender)}</div>` : ''}
+  ${p.patientPhone ? `<div><strong>Phone:</strong> ${escapeHtml(p.patientPhone)}</div>` : ''}
+</div>
+${p.diagnosis ? `<h3>Diagnosis</h3><div class="notes">${escapeHtml(p.diagnosis)}</div>` : ''}
+${p.medicines && p.medicines.length > 0 ? `<h3>℞ Medicines</h3><ol class="med-list">${p.medicines.map(m => `<li><div class="med-name">${escapeHtml(m.name)}</div><div class="med-detail">${escapeHtml(m.dose||'')}${m.dose&&m.frequency?' · ':''}${escapeHtml(m.frequency||'')}</div></li>`).join('')}</ol>` : ''}
+${p.notes ? `<h3>Doctor's Advice</h3><div class="notes">${escapeHtml(p.notes)}</div>` : ''}
+${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag">🔁 Next follow-up in: ${escapeHtml(p.followup)}</div>` : ''}
+<div class="footer">
+  <div>Generated by HealthFirst</div>
+  <div class="sign-line">Doctor's Signature</div>
+</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script>
+</body></html>`;
+    const w = window.open('', '_blank', 'width=900,height=1000');
+    if (!w) { alert('⚠️ Pop-up blocked. Allow pop-ups and try again.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  };
+
+  // Print today's appointment queue in a clean, focused layout (only the queue, not the whole page)
+  window.printTodayQueue = function () {
+    const me = window._currentDoctor || {};
+    const today = new Date().toISOString().split("T")[0];
+    const all = window._myAllBookings || [];
+    const todays = all.filter(b => b.date === today && b.status !== "cancelled")
+                      .sort((a, b) => (a.slot || "").localeCompare(b.slot || ""));
+    const todayDisplay = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    const rowsHtml = todays.length === 0
+      ? `<tr><td colspan="6" style="text-align:center;padding:30px;color:#888">No appointments scheduled for today.</td></tr>`
+      : todays.map((b, i) => `
+          <tr>
+            <td style="font-weight:700;color:#3D5A4C">${escapeHtml(b.slot || '—')}</td>
+            <td style="font-weight:700">#${escapeHtml(b.token || '—')}</td>
+            <td>${escapeHtml(b.patientName || '—')}</td>
+            <td>${escapeHtml(b.age || '—')} ${escapeHtml(b.gender || '')}</td>
+            <td>${escapeHtml(b.phone || '—')}</td>
+            <td><span style="text-transform:uppercase;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:${b.status==='done'?'#DCFCE7':b.status==='confirmed'?'#FEF3C7':'#FEE2E2'};color:${b.status==='done'?'#166534':b.status==='confirmed'?'#92400E':'#991B1B'}">${escapeHtml(b.status || '—')}</span></td>
+          </tr>
+        `).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Today's Queue — Dr. ${escapeHtml(me.name || '')}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font-family: Georgia, serif; color: #1F2F26; padding: 20px; background: white; margin: 0; }
+  .header { border-bottom: 3px solid #3D5A4C; padding-bottom: 14px; margin-bottom: 22px; }
+  .clinic-name { font-size: 26px; font-weight: 800; color: #3D5A4C; }
+  .meta { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; font-size: 13px; }
+  .meta strong { color: #3D5A4C; }
+  h2 { font-size: 16px; color: #3D5A4C; margin: 18px 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #F5F1EA; color: #3D5A4C; text-align: left; padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #3D5A4C; }
+  td { padding: 10px 12px; border-bottom: 1px solid #DDE5DB; }
+  tr:nth-child(even) td { background: #FAF6EF; }
+  .summary { display: flex; gap: 24px; margin-top: 18px; font-size: 12px; color: #555; padding-top: 12px; border-top: 1px solid #DDE5DB; }
+  .summary strong { color: #1F2F26; }
+  @media print { body { padding: 0; } .print-toolbar { display: none; } }
+  .print-toolbar { position: fixed; top: 12px; right: 12px; }
+  .print-toolbar button { padding: 8px 16px; background: #3D5A4C; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+</style></head><body>
+<div class="print-toolbar"><button onclick="window.print()">🖨 Print Now</button></div>
+<div class="header">
+  <div class="clinic-name">HealthFirst — Today's Queue</div>
+  <div class="meta">
+    <div><strong>Dr. ${escapeHtml(me.name || '—')}</strong>${me.specialty ? ' · ' + escapeHtml(me.specialty) : ''}</div>
+    <div><strong>Date:</strong> ${escapeHtml(todayDisplay)}</div>
+  </div>
+</div>
+<h2>Appointment List (${todays.length})</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Token</th>
+      <th>Patient Name</th>
+      <th>Age / Gender</th>
+      <th>Phone</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+<div class="summary">
+  <div>Total Booked: <strong>${todays.length}</strong></div>
+  <div>Completed: <strong>${todays.filter(b => b.status === 'done').length}</strong></div>
+  <div>Pending: <strong>${todays.filter(b => b.status === 'confirmed').length}</strong></div>
+</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script>
+</body></html>`;
+    const w = window.open('', '_blank', 'width=900,height=1000');
+    if (!w) { alert('⚠️ Pop-up blocked. Allow pop-ups and try again.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
   };
 
   // Click outside to close
