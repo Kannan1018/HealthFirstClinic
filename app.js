@@ -1790,14 +1790,25 @@ if (document.getElementById("queue-upcoming")) {
     // Sort slots by time
     const sortedSlots = [...todaySlots].sort((a, b) => slotToMinutes(a) - slotToMinutes(b));
 
+    // Determine slot length for this day so past/current/future is accurate
+    const dayPattern = sched.weeklyPattern[weekday];
+    let slotLengthMins = 30;
+    if (dayPattern && typeof dayPattern === "object" && !Array.isArray(dayPattern)) {
+      slotLengthMins = parseInt(dayPattern.slotLength) || 30;
+    } else if (sortedSlots.length >= 2) {
+      // Fallback for legacy array format — infer from gap between first two slots
+      slotLengthMins = Math.max(5, slotToMinutes(sortedSlots[1]) - slotToMinutes(sortedSlots[0]));
+    }
+
     // Store bookings globally so the slot click handler can find them
     window._timelineBookings = bookingsBySlot;
 
     let bookedCount = 0;
     const slotsHtml = sortedSlots.map(slot => {
       const slotMins = slotToMinutes(slot);
-      const isPast = slotMins < nowMins - 15;
-      const isCurrent = !isPast && slotMins <= nowMins + 30;
+      const slotEndMins = slotMins + slotLengthMins;
+      const isPast = slotEndMins <= nowMins;          // slot already ended
+      const isCurrent = !isPast && slotMins <= nowMins; // we're inside the slot window
       const b = bookingsBySlot[slot];
       let bg, color, label, hoverContent = "";
 
@@ -1826,16 +1837,15 @@ if (document.getElementById("queue-upcoming")) {
       }
 
       const borderStyle = isCurrent && !b ? "border:2px solid var(--teal);" : "border:1px solid var(--border);";
-      const slotKey = slot.replace(/'/g, "\\'");
 
-      return `<div onclick="openSlotDetail('${slotKey}')" title="${escapeHtml(slot)} — ${escapeHtml(hoverContent)} (click for details)" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px;cursor:pointer">
+      return `<div data-slot="${escapeHtml(slot)}" class="timeline-slot-click" title="${escapeHtml(slot)} — ${escapeHtml(hoverContent)} (click for details)" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px;cursor:pointer">
         <div style="width:100%;height:36px;background:${bg};color:${color};${borderStyle}border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;transition:transform .1s" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform=''">${label}</div>
         <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot.replace(/:00 /, ' ').replace(' AM', 'a').replace(' PM', 'p'))}</div>
       </div>`;
     }).join("");
 
     wrap.innerHTML = `
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${slotsHtml}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px" id="timelineSlots">${slotsHtml}</div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--navy-m);padding-top:10px;border-top:1px solid var(--border)">
         <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:var(--teal);border-radius:3px;display:inline-block"></span>Booked</span>
         <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:var(--teal);border:2px solid var(--teal);border-radius:3px;display:inline-block"></span>Now</span>
@@ -1844,6 +1854,17 @@ if (document.getElementById("queue-upcoming")) {
         <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:#F1F5F9;border:1px solid var(--border);border-radius:3px;display:inline-block"></span>Past</span>
         <span style="margin-left:auto;font-weight:600">${bookedCount}/${sortedSlots.length} booked</span>
       </div>`;
+
+    // Wire up click handler via event delegation (avoids issues with special chars in slot labels)
+    const slotsWrap = document.getElementById("timelineSlots");
+    if (slotsWrap) {
+      slotsWrap.addEventListener("click", function (ev) {
+        const card = ev.target.closest(".timeline-slot-click");
+        if (!card) return;
+        const slotLabel = card.getAttribute("data-slot");
+        if (slotLabel) window.openSlotDetail(slotLabel);
+      });
+    }
   }
 
   // Click handler — opens a modal with booking details for the tapped slot
