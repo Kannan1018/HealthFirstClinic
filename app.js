@@ -1780,6 +1780,9 @@ if (document.getElementById("queue-upcoming")) {
     // Sort slots by time
     const sortedSlots = [...todaySlots].sort((a, b) => slotToMinutes(a) - slotToMinutes(b));
 
+    // Store bookings globally so the slot click handler can find them
+    window._timelineBookings = bookingsBySlot;
+
     let bookedCount = 0;
     const slotsHtml = sortedSlots.map(slot => {
       const slotMins = slotToMinutes(slot);
@@ -1813,9 +1816,10 @@ if (document.getElementById("queue-upcoming")) {
       }
 
       const borderStyle = isCurrent && !b ? "border:2px solid var(--teal);" : "border:1px solid var(--border);";
+      const slotKey = slot.replace(/'/g, "\\'");
 
-      return `<div title="${escapeHtml(slot)} — ${escapeHtml(hoverContent)}" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px;cursor:default">
-        <div style="width:100%;height:36px;background:${bg};color:${color};${borderStyle}border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;transition:transform .1s">${label}</div>
+      return `<div onclick="openSlotDetail('${slotKey}')" title="${escapeHtml(slot)} — ${escapeHtml(hoverContent)} (click for details)" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px;cursor:pointer">
+        <div style="width:100%;height:36px;background:${bg};color:${color};${borderStyle}border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;transition:transform .1s" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform=''">${label}</div>
         <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot.replace(/:00 /, ' ').replace(' AM', 'a').replace(' PM', 'p'))}</div>
       </div>`;
     }).join("");
@@ -1831,6 +1835,91 @@ if (document.getElementById("queue-upcoming")) {
         <span style="margin-left:auto;font-weight:600">${bookedCount}/${sortedSlots.length} booked</span>
       </div>`;
   }
+
+  // Click handler — opens a modal with booking details for the tapped slot
+  window.openSlotDetail = function (slot) {
+    const bookings = window._timelineBookings || {};
+    const b = bookings[slot];
+
+    // Build modal HTML based on booking state
+    let body;
+    if (!b) {
+      body = `
+        <div style="text-align:center;padding:10px 0">
+          <div style="font-size:36px;margin-bottom:8px">📭</div>
+          <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px">Slot ${escapeHtml(slot)}</div>
+          <div style="font-size:13px;color:var(--navy-m)">This slot is available — no booking yet.</div>
+        </div>`;
+    } else if (b.status === "cancelled") {
+      body = `
+        <div style="text-align:center;padding:10px 0">
+          <div style="font-size:36px;margin-bottom:8px">✗</div>
+          <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px">${escapeHtml(b.patientName)} · ${escapeHtml(slot)}</div>
+          <div style="font-size:13px;color:var(--red);font-weight:600;margin-bottom:14px">CANCELLED</div>
+          <div style="font-size:13px;color:var(--navy-m);text-align:left;background:var(--bg);padding:10px 14px;border-radius:8px">
+            📞 ${escapeHtml(b.phone || "—")}<br>
+            🎟️ Token: ${escapeHtml(b.token || "—")}<br>
+            💰 ${escapeHtml(b.paymentMethod || "—")}
+          </div>
+        </div>`;
+    } else if (b.status === "done") {
+      body = `
+        <div style="text-align:center;padding:10px 0">
+          <div style="font-size:36px;margin-bottom:8px">✓</div>
+          <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px">${escapeHtml(b.patientName)} · ${escapeHtml(slot)}</div>
+          <div style="font-size:13px;color:var(--green);font-weight:600;margin-bottom:14px">COMPLETED</div>
+          <div style="font-size:13px;color:var(--navy-m);text-align:left;background:var(--bg);padding:10px 14px;border-radius:8px">
+            📞 ${escapeHtml(b.phone || "—")}<br>
+            🎟️ Token: ${escapeHtml(b.token || "—")}
+          </div>
+        </div>`;
+    } else {
+      // confirmed
+      const phoneClean = (b.phone || "").replace(/\D/g, "");
+      const waUrl = phoneClean ? `https://wa.me/91${phoneClean}` : null;
+      const callUrl = phoneClean ? `tel:+91${phoneClean}` : null;
+      body = `
+        <div style="padding:6px 0">
+          <div style="text-align:center;margin-bottom:14px">
+            <div style="font-size:16px;font-weight:700;color:var(--navy);margin-bottom:4px">${escapeHtml(b.patientName)}</div>
+            <div style="font-size:13px;color:var(--teal-d);font-weight:600">${escapeHtml(slot)} · Token #${escapeHtml(b.token || "—")}</div>
+          </div>
+          <div style="background:var(--bg);padding:12px 14px;border-radius:10px;font-size:13px;color:var(--navy-s);margin-bottom:14px;line-height:1.7">
+            ${b.age ? `👤 ${escapeHtml(b.age)} ${escapeHtml(b.gender || "")}<br>` : ""}
+            📞 ${escapeHtml(b.phone || "—")}<br>
+            💰 ${escapeHtml(b.paymentMethod === "online" ? "Paid online" : "Pay at clinic")}<br>
+            ${b.reason ? `📝 ${escapeHtml(b.reason)}` : ""}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${waUrl ? `<a href="${waUrl}" target="_blank" style="flex:1;min-width:90px;text-align:center;padding:9px;background:#25D366;color:white;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">💬 WhatsApp</a>` : ""}
+            ${callUrl ? `<a href="${callUrl}" style="flex:1;min-width:90px;text-align:center;padding:9px;background:var(--blue);color:white;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">📞 Call</a>` : ""}
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="closeSlotDetail(); markDone('${b.id}', '${(b.patientName || '').replace(/'/g, "\\'")}', '${phoneClean}')" style="flex:1;padding:10px;background:var(--green);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✓ Mark Done</button>
+            <button onclick="closeSlotDetail(); cancelAppt('${b.id}')" style="flex:1;padding:10px;background:var(--red);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
+          </div>
+        </div>`;
+    }
+
+    // Build modal
+    const existing = document.getElementById("slotDetailModal");
+    if (existing) existing.remove();
+    const modal = document.createElement("div");
+    modal.id = "slotDetailModal";
+    modal.style.cssText = "position:fixed;inset:0;background:rgba(31,47,38,0.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;animation:fadeIn .2s";
+    modal.onclick = (e) => { if (e.target === modal) window.closeSlotDetail(); };
+    modal.innerHTML = `
+      <div style="background:white;border-radius:var(--r-lg);max-width:420px;width:100%;padding:22px;box-shadow:var(--shadow-xl);position:relative">
+        <button onclick="closeSlotDetail()" style="position:absolute;top:10px;right:10px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--navy-m);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center" aria-label="Close">×</button>
+        ${body}
+      </div>`;
+    document.body.appendChild(modal);
+  };
+
+  window.closeSlotDetail = function () {
+    const m = document.getElementById("slotDetailModal");
+    if (m) m.remove();
+  };
 
   /* ─────────────────────────────────────────────
      FEATURE 2 — NEXT PATIENT HERO CARD
