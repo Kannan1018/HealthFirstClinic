@@ -1206,8 +1206,8 @@ if (document.getElementById("docList")) {
 
     const today = new Date();
     const availableDates = []; // {idx, date}
-    // Look ahead up to 30 days, take the first 14 that are workable
-    for (let i = 0; i < 30 && availableDates.length < 14; i++) {
+    // Look ahead 7 days (matches doctor's weekly schedule view)
+    for (let i = 0; i < 7; i++) {
       const d = new Date(today); d.setDate(today.getDate() + i);
       const weekday = String(d.getDay());
       const dayPattern = schedule.weeklyPattern[weekday];
