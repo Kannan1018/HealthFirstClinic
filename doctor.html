@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -114,7 +114,7 @@
         <div class="dash-greeting" id="dashGreeting">Good morning 👋</div>
         <div class="dash-date" id="dashDate"></div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
+      <div id="todayOnlyHeader" style="display:flex;gap:10px;align-items:center">
         <!-- Notification bell -->
         <div style="position:relative">
           <button id="notifBell" onclick="toggleNotifications()" style="position:relative;background:white;border:1.5px solid var(--border-md);width:42px;height:42px;border-radius:12px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s" title="Notifications">
@@ -398,9 +398,16 @@
               </select>
             </div>
 
-            <div style="display:flex;gap:12px;margin-top:6px">
-              <button class="rx-save" onclick="savePrescription()" style="flex:1">💾 Save Prescription</button>
-              <button class="rx-save" onclick="printPrescription()" style="flex:1;background:var(--navy)">🖨 Print / Share</button>
+            <!-- Hidden fields populated by the patient picker -->
+            <input type="hidden" id="rxBookingId" value="">
+            <input type="hidden" id="rxPhone" value="">
+
+            <div id="rxSaveStatus" style="display:none;background:var(--teal-l);color:var(--teal-d);padding:10px 14px;border-radius:var(--r);font-size:13px;font-weight:600;margin-top:14px;text-align:center"></div>
+
+            <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+              <button class="rx-save" onclick="savePrescription()" style="flex:1;min-width:160px">💾 Save Prescription</button>
+              <button class="rx-save" onclick="sendPrescriptionWhatsApp()" style="flex:1;min-width:160px;background:#25D366">💬 Send via WhatsApp</button>
+              <button class="rx-save" onclick="printPrescription()" style="flex:1;min-width:160px;background:var(--navy)">🖨 Print</button>
             </div>
           </div>
         </div>
@@ -490,7 +497,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=34"></script>
+<script src="app.js?v=35"></script>
 <script>
   // Set today's date
   const d = new Date();
@@ -513,6 +520,9 @@
     // Only show Next Patient card on Today's Queue tab
     const npc = document.getElementById('nextPatientCard');
     if (npc) npc.style.display = (id === 'today' && npc.innerHTML.trim()) ? 'block' : 'none';
+    // Only show top-right header actions on Today's Queue tab
+    const hdr = document.getElementById('todayOnlyHeader');
+    if (hdr) hdr.style.display = (id === 'today') ? 'flex' : 'none';
     // Refresh prescription patient picker when entering prescription tab
     if (id === 'prescription' && typeof window.populatePrescriptionDropdown === 'function') {
       window.populatePrescriptionDropdown();
@@ -549,13 +559,13 @@
   }
 
   function savePrescription() {
-    const pat = document.getElementById('rxPat').value.trim();
-    if (!pat) { alert('Please enter patient name.'); return; }
-    alert('✅ Prescription saved for ' + pat + '!\n\nIn production, this would be stored in the patient record and sent via WhatsApp/SMS.');
+    if (window._doPrescriptionSave) window._doPrescriptionSave();
   }
-
+  function sendPrescriptionWhatsApp() {
+    if (window._doPrescriptionWhatsApp) window._doPrescriptionWhatsApp();
+  }
   function printPrescription() {
-    alert('🖨 Print functionality will open a formatted prescription PDF.\n\nIn production, this generates a clinic-branded PDF prescription.');
+    if (window._doPrescriptionPrint) window._doPrescriptionPrint();
   }
 
   // Populate the patient quick-picker with today's bookings
@@ -587,16 +597,19 @@
 
   // Auto-fill prescription fields when a patient is picked
   window.selectPrescriptionPatient = function (bookingId) {
-    if (!bookingId) return; // "— Choose a patient —" option
+    // Clear hidden fields if "— Choose —" was selected again
+    document.getElementById('rxBookingId').value = bookingId || '';
+    if (!bookingId) { document.getElementById('rxPhone').value = ''; return; }
+
     const all = window._myAllBookings || [];
     const b = all.find(x => x.id === bookingId);
     if (!b) return;
     document.getElementById('rxPat').value = b.patientName || '';
     document.getElementById('rxToken').value = b.token ? ('Token #' + b.token) : '';
     document.getElementById('rxAge').value = b.age || '';
+    document.getElementById('rxPhone').value = (b.phone || '').replace(/\D/g, '');
     const genderSel = document.getElementById('rxGender');
     if (genderSel && b.gender) {
-      // Match against existing options (case-insensitive)
       const target = (b.gender || '').toLowerCase();
       for (let i = 0; i < genderSel.options.length; i++) {
         if (genderSel.options[i].text.toLowerCase() === target) { genderSel.selectedIndex = i; break; }
