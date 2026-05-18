@@ -469,7 +469,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=30"></script>
+<script src="app.js?v=31"></script>
 <script>
   // Set today's date
   const d = new Date();
@@ -512,24 +512,8 @@
     });
   }
 
-  // Mark done
-  let waitCount = 6;
-  function markDone(id) {
-    const row = document.getElementById(id);
-    row.querySelector('.ai-actions').innerHTML = '<span class="status-badge sb-done">✓ Done</span>';
-    row.querySelector('.ai-token').style.background = 'var(--green-l)';
-    row.querySelector('.ai-token').style.color = 'var(--green)';
-    waitCount = Math.max(0, waitCount - 1);
-    document.getElementById('waitingCount').textContent = waitCount;
-  }
-
-  function cancelAppt(id) {
-    const row = document.getElementById(id);
-    row.style.opacity = '0.5';
-    row.querySelector('.ai-actions').innerHTML = '<span class="status-badge sb-cancelled">Cancelled</span>';
-    waitCount = Math.max(0, waitCount - 1);
-    document.getElementById('waitingCount').textContent = waitCount;
-  }
+  // NOTE: markDone() and cancelAppt() are defined in app.js (window.markDone / window.cancelAppt).
+  // The previous inline placeholder versions have been removed so they don't override the real Firebase-backed ones.
 
   // Prescription
   function addMedRow() {
