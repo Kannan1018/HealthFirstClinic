@@ -111,7 +111,7 @@ em { font-style: italic; }
 .btn-outline:hover { background: var(--teal); color: var(--cream); }
 
 /* ══ NAV — refined with serif logo and dot separator ══ */
-nav {
+#mainNav, nav#mainNav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
   background: rgba(245,241,234,.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
@@ -146,7 +146,7 @@ nav {
 }
 .mobile-menu a:hover { color: var(--navy); background: var(--bg-2); }
 .mobile-menu.open { display: flex; }
-nav.scrolled { box-shadow: 0 4px 24px rgba(31,47,38,.05); }
+#mainNav.scrolled { box-shadow: 0 4px 24px rgba(31,47,38,.05); }
 
 /* ══ HERO — Editorial wellness magazine style ══ */
 .hero {
