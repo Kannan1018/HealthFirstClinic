@@ -2273,8 +2273,9 @@ if (document.getElementById("queue-upcoming")) {
       return;
     }
     if (phone && phone.length >= 10) {
-      const feedbackUrl = `${window.location.origin}/book.html?feedback=${id}`;
-      const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today 🙏 We'd love to hear about your experience — please take a moment to share your feedback here: ${feedbackUrl}`);
+      // Build absolute URL that respects GitHub Pages subpath (/HealthFirstClinic/)
+      const feedbackUrl = new URL("book.html?feedback=" + encodeURIComponent(id), window.location.href).href;
+      const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today. We'd love to hear about your experience — please take a moment to share your feedback here: ${feedbackUrl}`);
       const waLink = `https://wa.me/91${phone}?text=${msg}`;
       const sendWA = confirm(`✅ Appointment marked as done!\n\nSend a feedback request to ${patientName} on WhatsApp?`);
       if (sendWA) window.open(waLink, "_blank");
