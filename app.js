@@ -2355,6 +2355,210 @@ if (document.getElementById("queue-upcoming")) {
     loadTodayQueue(); // refresh all data
   };
 
+  /* ─── PRESCRIPTION SAVE / WHATSAPP / PRINT ─── */
+
+  // Collects current form values into a clean object
+  function _gatherPrescription() {
+    const pat = document.getElementById('rxPat')?.value.trim() || '';
+    const me = window._currentDoctor || {};
+    const medRows = document.querySelectorAll('#rxMedRows .rx-med-row');
+    const medicines = Array.from(medRows).map(row => {
+      const inputs = row.querySelectorAll('input');
+      return {
+        name: inputs[0]?.value.trim() || '',
+        dose: inputs[1]?.value.trim() || '',
+        frequency: inputs[2]?.value.trim() || ''
+      };
+    }).filter(m => m.name); // skip empty rows
+
+    return {
+      doctorId: me.id || '',
+      doctorName: me.name || '',
+      doctorSpecialty: me.specialty || '',
+      doctorQualification: me.qualification || '',
+      doctorEmail: (me.email || '').toLowerCase(),
+      bookingId: document.getElementById('rxBookingId')?.value || null,
+      patientName: pat,
+      patientPhone: (document.getElementById('rxPhone')?.value || '').replace(/\D/g, ''),
+      age: document.getElementById('rxAge')?.value || '',
+      gender: document.getElementById('rxGender')?.value || '',
+      token: document.getElementById('rxToken')?.value || '',
+      date: document.getElementById('rxDate')?.value || new Date().toISOString().split('T')[0],
+      diagnosis: document.getElementById('rxDiag')?.value.trim() || '',
+      medicines,
+      notes: document.getElementById('rxNotes')?.value.trim() || '',
+      followup: document.getElementById('rxFollowup')?.value || ''
+    };
+  }
+
+  function _showRxStatus(text, isError) {
+    const status = document.getElementById('rxSaveStatus');
+    if (!status) return;
+    status.style.display = 'block';
+    status.style.background = isError ? '#FEE2E2' : 'var(--teal-l)';
+    status.style.color = isError ? '#991B1B' : 'var(--teal-d)';
+    status.textContent = text;
+    if (!isError) setTimeout(() => { status.style.display = 'none'; }, 4500);
+  }
+
+  // Save to Firestore prescriptions collection
+  window._doPrescriptionSave = async function () {
+    const data = _gatherPrescription();
+    if (!data.patientName) { alert('⚠️ Please enter a patient name first.'); return null; }
+    if (data.medicines.length === 0 && !data.diagnosis && !data.notes) {
+      if (!confirm('No diagnosis, medicines, or notes added — save anyway?')) return null;
+    }
+    try {
+      const { collection, addDoc, serverTimestamp } = window._fs;
+      const ref = await addDoc(collection(db, "prescriptions"), { ...data, createdAt: serverTimestamp() });
+      _showRxStatus('✅ Prescription saved! You can find it in the patient\'s history.');
+      return { id: ref.id, ...data };
+    } catch (err) {
+      console.error('Prescription save failed:', err);
+      _showRxStatus('❌ Could not save: ' + (err.message || err) + ' — check firestore.rules', true);
+      return null;
+    }
+  };
+
+  // Save + open WhatsApp with formatted prescription text
+  window._doPrescriptionWhatsApp = async function () {
+    let phone = (document.getElementById('rxPhone')?.value || '').replace(/\D/g, '');
+    if (!phone || phone.length < 10) {
+      const manual = prompt('No phone number on file for this patient. Enter their 10-digit WhatsApp number (or Cancel to abort):');
+      if (!manual) return;
+      phone = manual.replace(/\D/g, '');
+      if (phone.length < 10) { alert('⚠️ Phone must be at least 10 digits.'); return; }
+      document.getElementById('rxPhone').value = phone;
+    }
+
+    const saved = await window._doPrescriptionSave();
+    if (!saved) return; // save failed — abort send
+
+    let text = `🏥 *Prescription from Dr. ${saved.doctorName}*\n`;
+    if (saved.doctorSpecialty) text += `${saved.doctorSpecialty}\n`;
+    text += `📅 Date: ${saved.date}\n`;
+    text += `\n👤 *Patient:* ${saved.patientName}`;
+    if (saved.age) text += `, ${saved.age} yrs`;
+    if (saved.gender) text += `, ${saved.gender}`;
+    text += `\n`;
+    if (saved.token) text += `🎫 ${saved.token}\n`;
+
+    if (saved.diagnosis) text += `\n🩺 *Diagnosis:*\n${saved.diagnosis}\n`;
+
+    if (saved.medicines.length > 0) {
+      text += `\n💊 *Medicines:*\n`;
+      saved.medicines.forEach((m, i) => {
+        text += `${i + 1}. ${m.name}`;
+        if (m.dose) text += ` — ${m.dose}`;
+        if (m.frequency) text += ` (${m.frequency})`;
+        text += `\n`;
+      });
+    }
+
+    if (saved.notes) text += `\n📝 *Doctor's Advice:*\n${saved.notes}\n`;
+
+    if (saved.followup && saved.followup !== 'No follow-up needed') {
+      text += `\n🔁 *Follow-up:* ${saved.followup}\n`;
+    }
+
+    text += `\n— HealthFirst`;
+
+    const url = `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
+  // Open printable prescription in new window
+  window._doPrescriptionPrint = function () {
+    const data = _gatherPrescription();
+    if (!data.patientName) { alert('⚠️ Please enter a patient name first.'); return; }
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Prescription — ${escapeHtml(data.patientName)}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #1F2F26; margin: 0; padding: 24px; background: white; }
+  .clinic-header { border-bottom: 3px solid #3D5A4C; padding-bottom: 16px; margin-bottom: 22px; }
+  .clinic-name { font-size: 30px; font-weight: 800; color: #3D5A4C; letter-spacing: 0.5px; }
+  .clinic-sub { font-size: 13px; color: #888; margin-top: 2px; }
+  .doctor-block { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 16px; font-size: 13px; flex-wrap: wrap; gap: 10px; }
+  .doctor-block .doc-name { font-weight: 700; font-size: 15px; }
+  .doctor-block .doc-spec { color: #666; }
+  .patient-block { background: #F5F1EA; padding: 12px 16px; border-radius: 8px; margin-bottom: 22px; font-size: 13px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .patient-block strong { color: #3D5A4C; }
+  h3 { color: #3D5A4C; font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid #DDE5DB; padding-bottom: 5px; margin-top: 22px; margin-bottom: 10px; }
+  .med-list { list-style: none; padding: 0; counter-reset: med; margin: 0; }
+  .med-list li { padding: 9px 0 9px 30px; border-bottom: 1px dashed #DDE5DB; font-size: 14px; position: relative; counter-increment: med; }
+  .med-list li::before { content: counter(med) "."; position: absolute; left: 0; font-weight: 700; color: #3D5A4C; }
+  .med-name { font-weight: 700; }
+  .med-detail { color: #666; font-size: 12px; margin-top: 2px; }
+  .notes { font-size: 14px; line-height: 1.7; white-space: pre-wrap; color: #2D4438; }
+  .footer { margin-top: 70px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .footer .left { font-size: 11px; color: #888; }
+  .sign-line { display: inline-block; border-top: 1px solid #1F2F26; padding-top: 6px; min-width: 220px; text-align: center; font-size: 12px; font-weight: 600; }
+  .followup-tag { display: inline-block; background: #EEF1ED; color: #3D5A4C; padding: 8px 14px; border-radius: 6px; font-weight: 700; font-size: 13px; margin-top: 12px; }
+  .rx-symbol { font-size: 22px; font-weight: 800; color: #3D5A4C; margin-right: 6px; }
+  @media print { body { padding: 0; } button { display: none; } }
+  .print-toolbar { position: fixed; top: 12px; right: 12px; }
+  .print-toolbar button { padding: 8px 16px; background: #3D5A4C; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: Georgia, serif; }
+</style></head><body>
+<div class="print-toolbar"><button onclick="window.print()">🖨 Print Now</button></div>
+<div class="clinic-header">
+  <div class="clinic-name">HealthFirst</div>
+  <div class="clinic-sub">Quality healthcare, when you need it</div>
+  <div class="doctor-block">
+    <div>
+      <div class="doc-name">Dr. ${escapeHtml(data.doctorName) || '—'}</div>
+      <div class="doc-spec">${escapeHtml(data.doctorSpecialty)}${data.doctorQualification ? ' · ' + escapeHtml(data.doctorQualification) : ''}</div>
+    </div>
+    <div style="text-align:right">
+      <div><strong>Date:</strong> ${escapeHtml(data.date)}</div>
+      ${data.token ? `<div><strong>Token:</strong> ${escapeHtml(data.token)}</div>` : ''}
+    </div>
+  </div>
+</div>
+
+<div class="patient-block">
+  <div><strong>Patient:</strong> ${escapeHtml(data.patientName)}</div>
+  ${data.age ? `<div><strong>Age:</strong> ${escapeHtml(data.age)} yrs</div>` : ''}
+  ${data.gender ? `<div><strong>Gender:</strong> ${escapeHtml(data.gender)}</div>` : ''}
+  ${data.patientPhone ? `<div><strong>Phone:</strong> ${escapeHtml(data.patientPhone)}</div>` : ''}
+</div>
+
+${data.diagnosis ? `<h3>Diagnosis</h3><div class="notes">${escapeHtml(data.diagnosis)}</div>` : ''}
+
+${data.medicines.length > 0 ? `
+<h3><span class="rx-symbol">℞</span> Medicines</h3>
+<ol class="med-list">
+  ${data.medicines.map(m => `
+    <li>
+      <div class="med-name">${escapeHtml(m.name)}</div>
+      <div class="med-detail">${escapeHtml(m.dose || '')}${m.dose && m.frequency ? ' · ' : ''}${escapeHtml(m.frequency || '')}</div>
+    </li>
+  `).join('')}
+</ol>` : ''}
+
+${data.notes ? `<h3>Doctor's Advice</h3><div class="notes">${escapeHtml(data.notes)}</div>` : ''}
+
+${data.followup && data.followup !== 'No follow-up needed' ? `<div class="followup-tag">🔁 Next follow-up in: ${escapeHtml(data.followup)}</div>` : ''}
+
+<div class="footer">
+  <div class="left">Generated by HealthFirst · ${escapeHtml(data.date)}</div>
+  <div class="sign-line">Doctor's Signature</div>
+</div>
+
+<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 400); };</script>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=900,height=1000');
+    if (!w) {
+      alert('⚠️ Your browser blocked the print pop-up. Please allow pop-ups for this site and try again.');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
   const fbParam = getParam("feedback");
   if (fbParam) document.getElementById("fbModal") && document.getElementById("fbModal").classList.add("open");
 
