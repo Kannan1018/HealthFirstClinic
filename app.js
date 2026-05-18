@@ -1933,7 +1933,8 @@ if (document.getElementById("queue-upcoming")) {
     } else {
       // confirmed
       const phoneClean = (b.phone || "").replace(/\D/g, "");
-      const waUrl = phoneClean ? `https://wa.me/91${phoneClean}` : null;
+      const reminderText = encodeURIComponent(`Hi ${b.patientName}! Just a reminder — your appointment is at ${slot} today (Token #${b.token || "—"}). See you soon. — HealthFirst`);
+      const waUrl = phoneClean ? `https://wa.me/91${phoneClean}?text=${reminderText}` : null;
       const callUrl = phoneClean ? `tel:+91${phoneClean}` : null;
       body = `
         <div style="padding:6px 0">
@@ -1948,11 +1949,11 @@ if (document.getElementById("queue-upcoming")) {
             ${b.reason ? `📝 ${escapeHtml(b.reason)}` : ""}
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            ${waUrl ? `<a href="${waUrl}" target="_blank" style="flex:1;min-width:90px;text-align:center;padding:9px;background:#25D366;color:white;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">💬 WhatsApp</a>` : ""}
+            ${waUrl ? `<a href="${waUrl}" target="_blank" style="flex:1;min-width:90px;text-align:center;padding:9px;background:#25D366;color:white;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">💬 Send Reminder</a>` : ""}
             ${callUrl ? `<a href="${callUrl}" style="flex:1;min-width:90px;text-align:center;padding:9px;background:var(--blue);color:white;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">📞 Call</a>` : ""}
           </div>
           <div style="display:flex;gap:8px;margin-top:8px">
-            <button onclick="closeSlotDetail(); markDone('${b.id}', '${(b.patientName || '').replace(/'/g, "\\'")}', '${phoneClean}')" style="flex:1;padding:10px;background:var(--green);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✓ Mark Done</button>
+            <button onclick="closeSlotDetail(); markDone('${b.id}', '${(b.patientName || '').replace(/'/g, "\\'")}', '${phoneClean}')" style="flex:1;padding:10px;background:var(--green);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✓ Mark Done + Feedback</button>
             <button onclick="closeSlotDetail(); cancelAppt('${b.id}')" style="flex:1;padding:10px;background:var(--red);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
           </div>
         </div>`;
@@ -2009,7 +2010,8 @@ if (document.getElementById("queue-upcoming")) {
     else { urgencyLabel = `In ${Math.floor(minsUntil/60)}h ${minsUntil%60}m`; urgencyColor = "var(--teal-d)"; }
 
     const phoneClean = (next.phone || "").replace(/\D/g, "");
-    const waLink = phoneClean.length >= 10 ? `https://wa.me/91${phoneClean}?text=${encodeURIComponent("Hi " + next.patientName + "! Just a quick reminder — your appointment is at " + next.slot + ". See you soon. — HealthFirst")}` : "";
+    const reminderMsg = encodeURIComponent(`Hi ${next.patientName}! Just a reminder — your appointment is at ${next.slot} today (Token #${next.token}). See you soon. — HealthFirst`);
+    const waLink = phoneClean.length >= 10 ? `https://wa.me/91${phoneClean}?text=${reminderMsg}` : "";
 
     card.style.display = "block";
     card.innerHTML = `
@@ -2032,7 +2034,7 @@ if (document.getElementById("queue-upcoming")) {
             <div style="font-size:13px;opacity:0.9">📞 ${escapeHtml(next.phone || "—")}</div>
             <div style="font-size:13px;opacity:0.9">${next.paymentMethod === "paid_online" ? "✅ Paid online" : "🏥 Pay at clinic"}</div>
             <div style="margin-left:auto;display:flex;gap:8px">
-              ${phoneClean ? `<a href="${waLink}" target="_blank" style="background:rgba(255,255,255,0.2);color:white;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,0.3)">💬 WhatsApp</a>` : ""}
+              ${phoneClean ? `<a href="${waLink}" target="_blank" style="background:rgba(255,255,255,0.2);color:white;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,0.3)">💬 Send Reminder</a>` : ""}
               ${phoneClean ? `<a href="tel:${escapeHtml(next.phone)}" style="background:rgba(255,255,255,0.2);color:white;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,0.3)">📞 Call</a>` : ""}
               <button onclick="showPatientHistory('${escapeHtml(next.phone || "")}','${escapeHtml(next.patientName).replace(/'/g, "\\'")}')" style="background:white;color:var(--teal-d);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:var(--ff)">📋 View History</button>
             </div>
@@ -2272,9 +2274,9 @@ if (document.getElementById("queue-upcoming")) {
     }
     if (phone && phone.length >= 10) {
       const feedbackUrl = `${window.location.origin}/book.html?feedback=${id}`;
-      const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today. Please share your feedback: ${feedbackUrl}`);
+      const msg = encodeURIComponent(`Hi ${patientName}! Thank you for visiting HealthFirst today 🙏 We'd love to hear about your experience — please take a moment to share your feedback here: ${feedbackUrl}`);
       const waLink = `https://wa.me/91${phone}?text=${msg}`;
-      const sendWA = confirm(`✅ Appointment marked as done!\n\nSend a WhatsApp feedback request to ${patientName}?`);
+      const sendWA = confirm(`✅ Appointment marked as done!\n\nSend a feedback request to ${patientName} on WhatsApp?`);
       if (sendWA) window.open(waLink, "_blank");
     } else {
       alert("✅ Appointment marked as done!");
