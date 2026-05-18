@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -318,6 +318,18 @@
             <div class="panel-title">💊 Write Digital Prescription</div>
           </div>
           <div class="rx-writer">
+
+            <!-- Quick patient picker (auto-fills name/token/age/gender/date) -->
+            <div class="rx-field" style="margin-bottom:16px;background:linear-gradient(180deg, var(--teal-l) 0%, transparent 100%);padding:14px;border-radius:var(--r-lg);border:1px solid var(--teal-ll)">
+              <label class="rx-label" style="display:flex;align-items:center;gap:6px">
+                <span>⚡</span> Quick-pick from today's patients
+              </label>
+              <select class="rx-select" id="rxPatientPicker" onchange="selectPrescriptionPatient(this.value)" style="background:white">
+                <option value="">— Choose a patient or type manually below —</option>
+              </select>
+              <div style="font-size:12px;color:var(--navy-m);margin-top:6px">Auto-fills name, token, age, gender & date. You can still edit any field.</div>
+            </div>
+
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
               <div class="rx-field">
                 <label class="rx-label">Patient Name</label>
@@ -501,6 +513,10 @@
     // Only show Next Patient card on Today's Queue tab
     const npc = document.getElementById('nextPatientCard');
     if (npc) npc.style.display = (id === 'today' && npc.innerHTML.trim()) ? 'block' : 'none';
+    // Refresh prescription patient picker when entering prescription tab
+    if (id === 'prescription' && typeof window.populatePrescriptionDropdown === 'function') {
+      window.populatePrescriptionDropdown();
+    }
   }
 
   // Availability toggle
@@ -541,6 +557,58 @@
   function printPrescription() {
     alert('🖨 Print functionality will open a formatted prescription PDF.\n\nIn production, this generates a clinic-branded PDF prescription.');
   }
+
+  // Populate the patient quick-picker with today's bookings
+  window.populatePrescriptionDropdown = function () {
+    const sel = document.getElementById('rxPatientPicker');
+    if (!sel) return;
+    const today = new Date().toISOString().split('T')[0];
+    const all = window._myAllBookings || [];
+    const todays = all
+      .filter(b => b.date === today && b.status !== 'cancelled')
+      .sort((a, b) => (a.slot || '').localeCompare(b.slot || ''));
+
+    // Auto-fill today's date in the date field if empty
+    const dateInput = document.getElementById('rxDate');
+    if (dateInput && !dateInput.value) dateInput.value = today;
+
+    if (todays.length === 0) {
+      sel.innerHTML = '<option value="">— No appointments today (type details below manually) —</option>';
+      return;
+    }
+
+    let html = '<option value="">— Choose a patient or type manually below —</option>';
+    todays.forEach(b => {
+      const status = b.status === 'done' ? ' ✓' : '';
+      html += `<option value="${b.id}">Token #${b.token || '—'} · ${b.patientName || 'Patient'} · ${b.slot || ''}${status}</option>`;
+    });
+    sel.innerHTML = html;
+  };
+
+  // Auto-fill prescription fields when a patient is picked
+  window.selectPrescriptionPatient = function (bookingId) {
+    if (!bookingId) return; // "— Choose a patient —" option
+    const all = window._myAllBookings || [];
+    const b = all.find(x => x.id === bookingId);
+    if (!b) return;
+    document.getElementById('rxPat').value = b.patientName || '';
+    document.getElementById('rxToken').value = b.token ? ('Token #' + b.token) : '';
+    document.getElementById('rxAge').value = b.age || '';
+    const genderSel = document.getElementById('rxGender');
+    if (genderSel && b.gender) {
+      // Match against existing options (case-insensitive)
+      const target = (b.gender || '').toLowerCase();
+      for (let i = 0; i < genderSel.options.length; i++) {
+        if (genderSel.options[i].text.toLowerCase() === target) { genderSel.selectedIndex = i; break; }
+      }
+    }
+    const dateInput = document.getElementById('rxDate');
+    if (dateInput) dateInput.value = b.date || new Date().toISOString().split('T')[0];
+
+    // Pre-fill diagnosis with the booking reason (doctor can edit)
+    const diag = document.getElementById('rxDiag');
+    if (diag && !diag.value.trim() && b.reason) diag.value = b.reason;
+  };
 
   function searchPatients(q) { /* live search hook */ }
 </script>
