@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -137,32 +137,32 @@
     <!-- NEXT PATIENT CARD (only shown in Today section) -->
     <div id="nextPatientCard" style="display:none"></div>
 
-    <!-- KPIs -->
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-label">Today's Appointments</div>
-        <div class="kpi-val" id="kpiToday">0</div>
-        <div class="kpi-delta" id="kpiTodayDelta" style="color:var(--navy-m)">—</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Today's Revenue</div>
-        <div class="kpi-val" id="kpiRevenue">₹0</div>
-        <div class="kpi-delta" id="kpiRevenueDelta" style="color:var(--navy-m)">—</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Patient Rating</div>
-        <div class="kpi-val" id="kpiRating">— ★</div>
-        <div class="kpi-delta" id="kpiRatingDelta" style="color:var(--navy-m)">No reviews yet</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Show Rate</div>
-        <div class="kpi-val" id="kpiShowRate">—</div>
-        <div class="kpi-delta" id="kpiShowRateDelta" style="color:var(--navy-m)">—</div>
-      </div>
-    </div>
-
     <!-- TODAY'S QUEUE SECTION -->
     <div id="section-today">
+
+      <!-- KPIs (only relevant on Today's Queue) -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Today's Appointments</div>
+          <div class="kpi-val" id="kpiToday">0</div>
+          <div class="kpi-delta" id="kpiTodayDelta" style="color:var(--navy-m)">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Today's Revenue</div>
+          <div class="kpi-val" id="kpiRevenue">₹0</div>
+          <div class="kpi-delta" id="kpiRevenueDelta" style="color:var(--navy-m)">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Patient Rating</div>
+          <div class="kpi-val" id="kpiRating">— ★</div>
+          <div class="kpi-delta" id="kpiRatingDelta" style="color:var(--navy-m)">No reviews yet</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Show Rate</div>
+          <div class="kpi-val" id="kpiShowRate">—</div>
+          <div class="kpi-delta" id="kpiShowRateDelta" style="color:var(--navy-m)">—</div>
+        </div>
+      </div>
 
       <!-- TIMELINE VIEW -->
       <div class="panel" style="margin-bottom:20px">
@@ -310,6 +310,9 @@
     <!-- PRESCRIPTION SECTION -->
     <div id="section-prescription" style="display:none">
       <div style="max-width:680px">
+        <div style="background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px;font-size:13px;color:var(--navy-m);line-height:1.6">
+          💡 <strong style="color:var(--navy)">Quick tip:</strong> Fill in patient details and medicines below. Once saved, the prescription can be shared with the patient over WhatsApp.
+        </div>
         <div class="panel">
           <div class="panel-head">
             <div class="panel-title">💊 Write Digital Prescription</div>
@@ -394,13 +397,13 @@
 
     <!-- SCHEDULE SECTION -->
     <div id="section-schedule" style="display:none">
+      <div style="background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px;font-size:13px;color:var(--navy-m);line-height:1.6;max-width:880px">
+        💡 <strong style="color:var(--navy)">How it works:</strong> Set your working hours and slot length for each day. Patients booking through your page will only see slots you enable here. Click "Save Schedule" when done — changes apply to all future bookings.
+      </div>
       <div class="panel" style="max-width:880px">
         <div class="panel-head">
           <div class="panel-title">📅 My Schedule — Set Your Available Time Slots</div>
           <button class="btn-primary" id="saveScheduleBtn" style="font-size:13px;padding:7px 16px" onclick="saveMySchedule()">💾 Save Schedule</button>
-        </div>
-        <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--navy-m);line-height:1.6">
-          Tick the time slots you're available on each day of the week. Patients will only be able to book the slots you've ticked. Changes apply to all future bookings.
         </div>
         <div id="scheduleEditor" style="padding:18px 20px">
           <div style="text-align:center;color:var(--navy-m);padding:24px">⏳ Loading your schedule...</div>
@@ -420,6 +423,9 @@
 
     <!-- PATIENTS SECTION -->
     <div id="section-patients" style="display:none">
+      <div style="background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px;font-size:13px;color:var(--navy-m);line-height:1.6">
+        💡 <strong style="color:var(--navy)">Patient history at a glance:</strong> Every patient who has visited you appears here. Search by name or phone, and click any patient to view their full visit history with you.
+      </div>
       <div class="panel">
         <div class="panel-head">
           <div class="panel-title">👥 Patient Records</div>
@@ -436,6 +442,9 @@
 
     <!-- EARNINGS SECTION -->
     <div id="section-earnings" style="display:none">
+      <div style="background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px;font-size:13px;color:var(--navy-m);line-height:1.6">
+        💡 <strong style="color:var(--navy)">Your revenue summary:</strong> Earnings are calculated from completed visits. Mark appointments as Done to count them toward your earnings.
+      </div>
       <div class="kpi-grid" style="margin-bottom:20px">
         <div class="kpi-card"><div class="kpi-label">This Month</div><div class="kpi-val" id="earnMonth">₹0</div><div class="kpi-delta" style="color:var(--navy-m)">From completed visits</div></div>
         <div class="kpi-card"><div class="kpi-label">This Week</div><div class="kpi-val" id="earnWeek">₹0</div><div class="kpi-delta" style="color:var(--navy-m)">Last 7 days</div></div>
@@ -469,7 +478,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=33"></script>
+<script src="app.js?v=34"></script>
 <script>
   // Set today's date
   const d = new Date();
