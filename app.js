@@ -2116,22 +2116,51 @@ if (document.getElementById("queue-upcoming")) {
       { num: "6", name: "Saturday" },
       { num: "0", name: "Sunday" }
     ];
+
+    // Compute the next upcoming date for each weekday (including today if it matches)
+    function getUpcomingDateForWeekday(targetDayNum) {
+      const today = new Date();
+      const todayDayNum = today.getDay();
+      const targetNum = parseInt(targetDayNum);
+      let diff = (targetNum - todayDayNum + 7) % 7;
+      // diff of 0 means today; show today as the upcoming date for that weekday
+      const upcoming = new Date(today);
+      upcoming.setDate(today.getDate() + diff);
+      return upcoming;
+    }
+
+    function formatUpcomingDate(d) {
+      const today = new Date();
+      const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
+      const sameDay = (a, b) => a.toDateString() === b.toDateString();
+      const dayMonth = d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+      if (sameDay(d, today)) return `${dayMonth} · Today`;
+      if (sameDay(d, tomorrow)) return `${dayMonth} · Tomorrow`;
+      return dayMonth;
+    }
+
     grid.innerHTML = days.map(d => {
       const activeSlots = new Set(currentScheduleData.weeklyPattern[d.num] || []);
       const isOff = activeSlots.size === 0;
+      const upcomingDate = getUpcomingDateForWeekday(d.num);
+      const dateLabel = formatUpcomingDate(upcomingDate);
       return `
         <div style="margin-bottom:18px;background:var(--bg);border-radius:var(--r-lg);padding:14px 16px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-            <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--navy)">${d.name}${isOff ? ' <span style="font-size:11px;background:var(--red-l);color:#991B1B;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px">Day off</span>' : ' <span style="font-size:11px;background:var(--teal-l);color:var(--teal-d);padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px">' + activeSlots.size + ' slot' + (activeSlots.size === 1 ? '' : 's') + '</span>'}</div>
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+              <div style="font-family:var(--ff-d);font-size:17px;font-weight:600;color:var(--navy);letter-spacing:-0.01em">${d.name}</div>
+              <div style="font-size:12px;color:var(--navy-m);font-weight:600">📅 ${dateLabel}</div>
+              ${isOff ? '<span style="font-size:11px;background:var(--red-l);color:var(--red);padding:2px 10px;border-radius:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em">Day off</span>' : '<span style="font-size:11px;background:var(--teal-l);color:var(--teal-d);padding:2px 10px;border-radius:14px;font-weight:700">' + activeSlots.size + ' slot' + (activeSlots.size === 1 ? '' : 's') + '</span>'}
+            </div>
             <div style="display:flex;gap:6px">
-              <button onclick="toggleAllSlots('${d.num}', true)" style="background:none;border:1px solid var(--border-md);padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Select all</button>
-              <button onclick="toggleAllSlots('${d.num}', false)" style="background:none;border:1px solid var(--border-md);padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Clear all</button>
+              <button onclick="toggleAllSlots('${d.num}', true)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Select all</button>
+              <button onclick="toggleAllSlots('${d.num}', false)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Clear all</button>
             </div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
             ${ALL_SLOTS.map(s => {
               const isActive = activeSlots.has(s);
-              return `<button onclick="toggleSlot('${d.num}','${s}')" style="padding:6px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--ff);transition:all .15s;${isActive ? 'background:var(--teal);color:white;border:1.5px solid var(--teal)' : 'background:white;color:var(--navy-s);border:1.5px solid var(--border-md)'}">${s}</button>`;
+              return `<button onclick="toggleSlot('${d.num}','${s}')" style="padding:6px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--ff);transition:all .15s;${isActive ? 'background:var(--teal);color:var(--cream);border:1.5px solid var(--teal)' : 'background:white;color:var(--navy-s);border:1.5px solid var(--border-md)'}">${s}</button>`;
             }).join("")}
           </div>
         </div>`;
