@@ -1082,6 +1082,13 @@ if (document.getElementById("docList")) {
     const specParam = getParam("spec");
     const docIdParam = getParam("docId");
     const qParam = getParam("q");
+    const feedbackParam = getParam("feedback");
+
+    // If user arrived via a "leave feedback" link from WhatsApp, fetch that booking and open the rating modal
+    if (feedbackParam) {
+      await openFeedbackFlow(feedbackParam);
+      return; // skip the rest of the booking-page setup
+    }
 
     if (qParam) {
       const q = qParam.toLowerCase();
@@ -1103,6 +1110,56 @@ if (document.getElementById("docList")) {
         if (card) card.click();
       }, 150);
     }
+  }
+
+  // Fetches a booking by ID, primes the feedback modal, and opens it.
+  async function openFeedbackFlow(bookingId) {
+    if (!firebaseReady) {
+      alert("⏳ Loading… please try again in a moment.");
+      return;
+    }
+    const { doc, getDoc } = window._fs;
+    let bookingData = null;
+    try {
+      const snap = await getDoc(doc(db, "bookings", bookingId));
+      if (snap.exists()) bookingData = snap.data();
+    } catch (e) {
+      console.warn("openFeedbackFlow getDoc failed (likely permissions). Falling back to publicBookings.", e);
+    }
+    // Fallback: try publicBookings (patient-safe summary, doesn't require auth)
+    if (!bookingData) {
+      try {
+        const { collection, query, where, getDocs } = window._fs;
+        const q = query(collection(db, "publicBookings"), where("bookingId", "==", bookingId));
+        const qs = await getDocs(q);
+        if (!qs.empty) bookingData = qs.docs[0].data();
+      } catch (e) { console.warn("publicBookings query failed:", e); }
+    }
+    if (!bookingData) {
+      alert("Sorry, we couldn't find your appointment. The feedback link may have expired.");
+      return;
+    }
+
+    // Hide the rest of the booking page so the user focuses on feedback
+    const layout = document.querySelector(".book-layout");
+    const pageHeader = document.querySelector(".page-header");
+    if (layout) layout.style.display = "none";
+    if (pageHeader) {
+      const ph = pageHeader.querySelector(".ph-title");
+      const phs = pageHeader.querySelector(".ph-sub");
+      if (ph) ph.textContent = "How was your visit?";
+      if (phs) phs.textContent = `Share your experience with Dr. ${bookingData.doctor || "your doctor"}.`;
+    }
+
+    completedBookingForFeedback = {
+      bookingId: bookingId,
+      patientName: bookingData.patientName || "Patient",
+      doctor: bookingData.doctor || "—",
+      specialty: bookingData.specialty || ""
+    };
+    const sub = document.getElementById("fbModalSub");
+    if (sub) sub.textContent = `Share your experience with Dr. ${bookingData.doctor || "—"}`;
+    document.getElementById("fbModal").classList.add("open");
   }
 
   function renderSpecFilter(doctors) {
