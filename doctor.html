@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -103,8 +103,9 @@
       <button class="sb-link" onclick="showSection('schedule',this)"><span class="sb-link-icon">📅</span> My Schedule</button>
       <button class="sb-link" onclick="showSection('patients',this)"><span class="sb-link-icon">👥</span> Patient Records</button>
       <button class="sb-link" onclick="showSection('earnings',this)"><span class="sb-link-icon">💰</span> Earnings</button>
-      <a href="index.html" class="sb-link" style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px"><span class="sb-link-icon">🏥</span> Public Site</a>
+      <a href="index.html" class="sb-link" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px"><span class="sb-link-icon">🏥</span> Public Site</a>
       <a href="admin.html" class="sb-link"><span class="sb-link-icon">📊</span> Admin Panel</a>
+      <button class="sb-link signout-link" onclick="doAdminLogout()"><span class="sb-link-icon">🚪</span> Sign Out</button>
     </nav>
   </aside>
 
@@ -470,7 +471,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 <script>
   // Set today's date
   const d = new Date();
