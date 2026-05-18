@@ -2411,6 +2411,16 @@ if (document.getElementById("queue-upcoming")) {
     if (data.medicines.length === 0 && !data.diagnosis && !data.notes) {
       if (!confirm('No diagnosis, medicines, or notes added — save anyway?')) return null;
     }
+
+    // DEBUG: Log exactly what we're sending vs what the rule will check
+    const authEmail = window._auth?.auth?.currentUser?.email || '(none)';
+    console.log("=== PRESCRIPTION SAVE DEBUG ===");
+    console.log("Firebase Auth email (rule will compare against this):", JSON.stringify(authEmail));
+    console.log("doctorEmail in data:", JSON.stringify(data.doctorEmail));
+    console.log("Match?:", authEmail === data.doctorEmail);
+    console.log("Full data payload:", data);
+    console.log("================================");
+
     try {
       const { collection, addDoc, serverTimestamp } = window._fs;
       const ref = await addDoc(collection(db, "prescriptions"), { ...data, createdAt: serverTimestamp() });
