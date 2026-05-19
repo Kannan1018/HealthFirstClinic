@@ -380,6 +380,7 @@ async function handleAuthStateChange(user) {
     if (userEmail === adminEmail) {
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email;
+      try { localStorage.setItem('hf_admin_name', 'Admin'); } catch (e) {}
       showContent();
       document.dispatchEvent(new Event("admin-ready"));
     } else {
@@ -418,6 +419,11 @@ async function handleAuthStateChange(user) {
       window._currentDoctor = docMatch;
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email;
+      // Cache doctor's name for personalized splash on next reload
+      try {
+        const friendlyName = docMatch.name ? (docMatch.name.startsWith('Dr.') ? docMatch.name : 'Dr. ' + docMatch.name) : '';
+        if (friendlyName) localStorage.setItem('hf_doctor_name', friendlyName);
+      } catch (e) {}
       // Apply availability toggle state from doctor record (defaults to available)
       if (typeof window.applyAvailabilityUI === "function") {
         window.applyAvailabilityUI(docMatch.available === false);
@@ -475,6 +481,8 @@ window.doAdminLogout = async function () {
   try {
     await window._auth.signOut(window._auth.auth);
   } catch (e) { console.error(e); }
+  // Clear cached names so next sign-in doesn't show wrong name in splash
+  try { localStorage.removeItem('hf_doctor_name'); localStorage.removeItem('hf_admin_name'); } catch (e) {}
   location.reload();
 };
 
@@ -2970,6 +2978,7 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
       }
 
       // Everything succeeded
+      try { localStorage.removeItem('hf_doctor_name'); localStorage.removeItem('hf_admin_name'); } catch (e) {}
       alert("✅ Your account has been permanently deleted.\n\nThank you for being part of HealthFirst. You can re-register anytime with the same email.");
       window.location.replace("index.html");
     } catch (err) {

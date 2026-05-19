@@ -37,9 +37,19 @@
           <span>HealthFirst</span>
         </div>
         <div class="auth-spinner" style="width:36px;height:36px;border:3px solid var(--teal-l);border-top-color:var(--teal);border-radius:50%;margin:0 auto 14px;animation:auth-spin .8s linear infinite"></div>
-        <div style="color:var(--navy-m);font-size:13px;font-weight:500">Welcome back, signing you in…</div>
+        <div id="authSplashMsg" style="color:var(--navy-m);font-size:13px;font-weight:500">Welcome back, signing you in…</div>
       </div>
       <style>@keyframes auth-spin { to { transform: rotate(360deg); } }</style>
+      <script>
+        // Personalize splash with cached doctor name from previous sign-in (instant — no Firebase wait)
+        try {
+          const cachedName = localStorage.getItem('hf_doctor_name');
+          if (cachedName) {
+            const msg = document.getElementById('authSplashMsg');
+            if (msg) msg.textContent = 'Welcome back, ' + cachedName + '…';
+          }
+        } catch (e) { /* localStorage blocked — fall back to generic message */ }
+      </script>
     </div>
     <div id="authLogin" style="display:none">
       <div class="auth-logo"><span>🏥</span><span>HealthFirst</span></div>
