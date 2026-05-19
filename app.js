@@ -3067,6 +3067,10 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
 
     renderAdminBookings(bookings);
 
+    // Wire up admin filters & notifications
+    if (typeof window.populateDoctorFilterDropdown === 'function') window.populateDoctorFilterDropdown();
+    if (typeof window.refreshAdminNotifications === 'function') window.refreshAdminNotifications(applications);
+
     const docList = document.getElementById("docManageList");
     if (docList) {
       docList.innerHTML = doctors.length === 0
@@ -3298,15 +3302,149 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
 
   /* Patient phone/name search */
   window.searchPatientBookings = function () {
-    const q = (document.getElementById("patientSearchInput")?.value || "").trim().toLowerCase();
-    const all = window._adminAllBookings || [];
-    if (!q) { renderAdminBookings(all); return; }
-    const filtered = all.filter(b =>
-      (b.phone || "").toLowerCase().includes(q) ||
-      (b.patientName || "").toLowerCase().includes(q) ||
-      (b.token || "").toLowerCase().includes(q)
+    // Kept for backward compat — now routes through unified filter
+    applyBookingFilters();
+  };
+
+  /* ─── Admin: live filter for Manage Doctors list ─── */
+  window.filterAdminDoctors = function () {
+    const q = (document.getElementById("doctorSearchInput")?.value || "").trim().toLowerCase();
+    const all = window._adminAllDoctors || [];
+    const docList = document.getElementById("docManageList");
+    if (!docList) return;
+    const filtered = !q ? all : all.filter(d =>
+      (d.name || "").toLowerCase().includes(q) ||
+      (d.specialty || "").toLowerCase().includes(q) ||
+      (d.city || "").toLowerCase().includes(q) ||
+      (d.state || "").toLowerCase().includes(q) ||
+      (d.email || "").toLowerCase().includes(q) ||
+      (d.qualification || "").toLowerCase().includes(q)
     );
-    renderAdminBookings(filtered);
+    if (filtered.length === 0) {
+      docList.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No doctors match "${escapeHtml(q)}".</div>`;
+      return;
+    }
+    docList.innerHTML = filtered.map(d => `
+      <div class="appt-item">
+        <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px">${escapeHtml(d.avatar||"👨‍⚕️")}</div>
+        <div class="ai-info">
+          <div class="ai-name">${escapeHtml(d.name)}</div>
+          <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
+          <div class="ai-detail" style="margin-top:3px;font-size:11px">${d.email ? "🔑 " + escapeHtml(d.email) : "<span style='color:var(--amber)'>⚠️ No login email — add one</span>"}</div>
+        </div>
+        <button class="ai-btn cancel" onclick="removeDoctorAdmin('${d.id}','${escapeHtml(d.name).replace(/'/g, "\\'")}')">Remove</button>
+      </div>`).join("");
+  };
+
+  /* ─── Admin: combined booking filter (search + doctor + status + date) ─── */
+  window.applyBookingFilters = function () {
+    const all = window._adminAllBookings || [];
+    const q = (document.getElementById("patientSearchInput")?.value || "").trim().toLowerCase();
+    const doctorFilter = document.getElementById("filterDoctor")?.value || "";
+    const statusFilter = document.getElementById("filterStatus")?.value || "";
+    const dateFilter = document.getElementById("filterDate")?.value || "";
+
+    let result = all;
+
+    if (q) {
+      result = result.filter(b =>
+        (b.phone || "").toLowerCase().includes(q) ||
+        (b.patientName || "").toLowerCase().includes(q) ||
+        (b.token || "").toLowerCase().includes(q)
+      );
+    }
+    if (doctorFilter) result = result.filter(b => b.doctor === doctorFilter);
+    if (statusFilter) result = result.filter(b => b.status === statusFilter);
+
+    if (dateFilter) {
+      const now = new Date();
+      const todayStr = now.toISOString().split("T")[0];
+      const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split("T")[0];
+      const weekFromNow = new Date(now); weekFromNow.setDate(now.getDate() + 7);
+
+      if (dateFilter === "today") result = result.filter(b => b.date === todayStr);
+      else if (dateFilter === "tomorrow") result = result.filter(b => b.date === tomorrowStr);
+      else if (dateFilter === "week") result = result.filter(b => {
+        if (!b.date) return false;
+        const d = new Date(b.date);
+        return d >= now && d <= weekFromNow;
+      });
+      else if (dateFilter === "month") result = result.filter(b => {
+        if (!b.date) return false;
+        const d = new Date(b.date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      });
+    }
+
+    renderAdminBookings(result);
+
+    // Update count badge
+    const cntEl = document.getElementById("bookingCount");
+    if (cntEl) {
+      const hasFilter = q || doctorFilter || statusFilter || dateFilter;
+      cntEl.textContent = hasFilter ? `${result.length} of ${all.length}` : "Live feed";
+    }
+  };
+
+  /* Clear all booking filters */
+  window.clearBookingFilters = function () {
+    const i = document.getElementById("patientSearchInput"); if (i) i.value = "";
+    const fd = document.getElementById("filterDoctor"); if (fd) fd.value = "";
+    const fs = document.getElementById("filterStatus"); if (fs) fs.value = "";
+    const ft = document.getElementById("filterDate"); if (ft) ft.value = "";
+    applyBookingFilters();
+  };
+
+  /* Populate doctor filter dropdown from loaded doctors */
+  window.populateDoctorFilterDropdown = function () {
+    const sel = document.getElementById("filterDoctor");
+    if (!sel) return;
+    const doctors = window._adminAllDoctors || [];
+    const currentVal = sel.value;
+    let html = '<option value="">All Doctors</option>';
+    doctors.forEach(d => { html += `<option value="${escapeHtml(d.name)}">${escapeHtml(d.name)}</option>`; });
+    sel.innerHTML = html;
+    if (currentVal) sel.value = currentVal; // preserve selection on reload
+  };
+
+  /* ─── Admin: notification bell for pending applications ─── */
+  window.toggleAdminNotifications = function () {
+    const dd = document.getElementById("adminNotifDropdown");
+    if (!dd) return;
+    dd.style.display = dd.style.display === "none" ? "block" : "none";
+  };
+
+  // Close notification dropdown on outside click
+  document.addEventListener("click", function (e) {
+    const dd = document.getElementById("adminNotifDropdown");
+    const bell = document.getElementById("adminNotifBell");
+    if (dd && bell && dd.style.display === "block" && !dd.contains(e.target) && !bell.contains(e.target)) {
+      dd.style.display = "none";
+    }
+  });
+
+  /* Refresh notification bell with pending applications */
+  window.refreshAdminNotifications = function (applications) {
+    const pending = (applications || []).filter(a => (a.status || "pending") === "pending");
+    const badge = document.getElementById("adminNotifBadge");
+    const list = document.getElementById("adminNotifList");
+    if (badge) {
+      if (pending.length > 0) { badge.style.display = "flex"; badge.textContent = pending.length; }
+      else { badge.style.display = "none"; }
+    }
+    if (list) {
+      if (pending.length === 0) {
+        list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:13px">🎉 No pending applications</div>`;
+      } else {
+        list.innerHTML = pending.slice(0, 10).map(a => `
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer" onclick="document.getElementById('docApplications').scrollIntoView({behavior:'smooth'});toggleAdminNotifications();">
+            <div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:2px">${escapeHtml(a.name || 'Unknown')}</div>
+            <div style="font-size:11px;color:var(--navy-m)">${escapeHtml(a.specialty || '—')}${a.city ? ' · ' + escapeHtml(a.city) : ''}</div>
+          </div>
+        `).join("");
+      }
+    }
   };
 
   /* WhatsApp reminders for tomorrow's bookings */
