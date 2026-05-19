@@ -3133,10 +3133,90 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     const onlineRevenue = thisMonth.filter(b => b.paymentMethod === "paid_online").reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
     const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 5), 0) / reviews.length).toFixed(1) : "—";
 
+    // ─── NEW action-focused KPIs ───
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayBookings = bookings.filter(b => b.date === todayStr && b.status !== "cancelled");
+    const pendingApps = applications.filter(a => (a.status || "pending") === "pending");
+
+    // Cancellations in last 7 days
+    const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const cancelsThisWeek = bookings.filter(b => {
+      if (b.status !== "cancelled" || !b.date) return false;
+      const d = new Date(b.date);
+      return d >= sevenDaysAgo;
+    });
+
     const el = id => document.getElementById(id);
-    if (el("adminTotalBookings")) el("adminTotalBookings").textContent = thisMonth.length;
+    if (el("adminPendingApps")) el("adminPendingApps").textContent = pendingApps.length;
+    if (el("adminPendingDelta")) {
+      el("adminPendingDelta").textContent = pendingApps.length > 0 ? "🔴 Tap to review" : "✓ All caught up";
+      el("adminPendingDelta").style.color = pendingApps.length > 0 ? "var(--red)" : "var(--green)";
+    }
+    if (el("adminTodayBookings")) el("adminTodayBookings").textContent = todayBookings.length;
+    if (el("adminTodayDelta")) {
+      const done = todayBookings.filter(b => b.status === "done").length;
+      el("adminTodayDelta").textContent = `${done} completed so far`;
+    }
     if (el("adminRevenue")) el("adminRevenue").textContent = "₹" + onlineRevenue.toLocaleString("hi-IN");
+    if (el("adminCancelsWeek")) el("adminCancelsWeek").textContent = cancelsThisWeek.length;
+    if (el("adminCancelDelta")) el("adminCancelDelta").textContent = cancelsThisWeek.length === 0 ? "🎉 Zero this week" : "Last 7 days";
+    // Backward-compat (some older code may still reference these IDs)
+    if (el("adminTotalBookings")) el("adminTotalBookings").textContent = thisMonth.length;
+    if (el("adminAvgRating")) el("adminAvgRating").textContent = avgRating;
+    if (el("adminDocCount")) el("adminDocCount").textContent = doctors.length;
     if (el("adminTotalAll")) el("adminTotalAll").textContent = bookings.length;
+
+    // ─── Top Earning Doctors (this month, completed bookings only) ───
+    renderTopEarners(thisMonth, doctors);
+  }
+
+  function renderTopEarners(thisMonthBookings, doctors) {
+    const wrap = document.getElementById("topEarnersList");
+    if (!wrap) return;
+
+    // Aggregate completed-visit fees per doctor
+    const earnings = {};
+    thisMonthBookings
+      .filter(b => b.status === "done")
+      .forEach(b => {
+        const key = b.doctor || "—";
+        if (!earnings[key]) earnings[key] = { name: key, revenue: 0, visits: 0, specialty: b.specialty || "" };
+        earnings[key].revenue += parseInt(b.fee) || 0;
+        earnings[key].visits += 1;
+      });
+
+    const ranked = Object.values(earnings)
+      .filter(e => e.revenue > 0)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    if (ranked.length === 0) {
+      wrap.innerHTML = `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:20px">No completed visits this month yet.<br><span style="font-size:11px;color:var(--navy-h)">Earnings appear here once doctors start marking appointments as Done.</span></div>`;
+      return;
+    }
+
+    const maxRevenue = ranked[0].revenue;
+    const medals = ["🥇", "🥈", "🥉", "4.", "5."];
+
+    wrap.innerHTML = ranked.map((e, i) => {
+      const pct = Math.max(8, (e.revenue / maxRevenue) * 100);
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;${i < ranked.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
+          <div style="font-size:18px;width:30px;text-align:center;flex-shrink:0">${medals[i]}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px">
+              <div style="font-weight:700;color:var(--navy);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(e.name)}</div>
+              <div style="font-weight:800;color:var(--teal-d);font-size:14px;font-variant-numeric:tabular-nums;flex-shrink:0">₹${e.revenue.toLocaleString("en-IN")}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:6px;background:var(--teal-l);border-radius:3px;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--teal),var(--teal-d));border-radius:3px"></div>
+              </div>
+              <div style="font-size:11px;color:var(--navy-m);font-weight:600;white-space:nowrap">${e.visits} visit${e.visits===1?'':'s'}</div>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
     if (el("adminAvgRating")) el("adminAvgRating").textContent = avgRating + " ★ (" + reviews.length + " reviews)";
     if (el("adminDocCount")) el("adminDocCount").textContent = doctors.length;
   }
@@ -3394,6 +3474,77 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     const fs = document.getElementById("filterStatus"); if (fs) fs.value = "";
     const ft = document.getElementById("filterDate"); if (ft) ft.value = "";
     applyBookingFilters();
+  };
+
+  /* Export currently filtered bookings to CSV file */
+  window.exportBookingsCSV = function () {
+    const all = window._adminAllBookings || [];
+
+    // Re-compute the same filter logic so the export matches what's on screen
+    const q = (document.getElementById("patientSearchInput")?.value || "").trim().toLowerCase();
+    const doctorFilter = document.getElementById("filterDoctor")?.value || "";
+    const statusFilter = document.getElementById("filterStatus")?.value || "";
+    const dateFilter = document.getElementById("filterDate")?.value || "";
+
+    let rows = all;
+    if (q) rows = rows.filter(b => (b.phone||"").toLowerCase().includes(q) || (b.patientName||"").toLowerCase().includes(q) || (b.token||"").toLowerCase().includes(q));
+    if (doctorFilter) rows = rows.filter(b => b.doctor === doctorFilter);
+    if (statusFilter) rows = rows.filter(b => b.status === statusFilter);
+    if (dateFilter) {
+      const now = new Date();
+      const todayStr = now.toISOString().split("T")[0];
+      const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split("T")[0];
+      const weekFromNow = new Date(now); weekFromNow.setDate(now.getDate() + 7);
+      if (dateFilter === "today") rows = rows.filter(b => b.date === todayStr);
+      else if (dateFilter === "tomorrow") rows = rows.filter(b => b.date === tomorrowStr);
+      else if (dateFilter === "week") rows = rows.filter(b => { if (!b.date) return false; const d=new Date(b.date); return d>=now && d<=weekFromNow; });
+      else if (dateFilter === "month") rows = rows.filter(b => { if (!b.date) return false; const d=new Date(b.date); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); });
+    }
+
+    if (rows.length === 0) { alert("No bookings to export with current filters."); return; }
+
+    // Escape CSV field per RFC 4180
+    const esc = (v) => {
+      if (v == null) return "";
+      const s = String(v);
+      // Always quote so commas, newlines, quotes in patient names/addresses don't break the file
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+
+    const headers = ["Date", "Time", "Token", "Patient Name", "Phone", "Age", "Gender", "Doctor", "Specialty", "Fee (₹)", "Payment", "Status", "Reason", "Booking ID"];
+    const lines = [headers.map(esc).join(",")];
+    rows.forEach(b => {
+      lines.push([
+        b.date || "",
+        b.slot || "",
+        b.token || "",
+        b.patientName || "",
+        b.phone || "",
+        b.age || "",
+        b.gender || "",
+        b.doctor || "",
+        b.specialty || "",
+        b.fee || "",
+        b.paymentMethod === "paid_online" ? "Paid Online" : "Pay at Clinic",
+        b.status || "",
+        b.reason || "",
+        b.id || ""
+      ].map(esc).join(","));
+    });
+
+    // BOM helps Excel detect UTF-8 (₹, accented names, etc.) correctly
+    const csv = "\uFEFF" + lines.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().split("T")[0];
+    a.href = url;
+    a.download = `healthfirst-bookings-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   /* Populate doctor filter dropdown from loaded doctors */
