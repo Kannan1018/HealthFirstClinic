@@ -6,7 +6,7 @@
 <title>Admin Panel — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=16">
 <style>
   .admin-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px 20px; }
   .admin-form .field-full { grid-column: 1 / -1; }
@@ -83,7 +83,6 @@
       <li><a href="index.html">Public Site</a></li>
     </ul>
     <div class="nav-actions">
-      <a href="book.html" class="btn-primary nav-book">View Booking Page</a>
       <button class="burger" id="burger" aria-label="Open menu"><span></span><span></span><span></span></button>
     </div>
   </div>
@@ -101,8 +100,17 @@
         <div class="admin-title">Admin Dashboard</div>
         <div class="admin-sub">HealthFirst Platform · <span id="adminDate"></span></div>
       </div>
-      <div style="display:flex;gap:10px">
-        <a href="book.html" class="btn-primary">View Booking Page</a>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="position:relative">
+          <button id="adminNotifBell" onclick="toggleAdminNotifications()" style="position:relative;background:white;border:1.5px solid var(--border-md);width:42px;height:42px;border-radius:12px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center" title="New applications">
+            🔔
+            <span id="adminNotifBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--red);color:white;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid white;font-family:var(--ff)">0</span>
+          </button>
+          <div id="adminNotifDropdown" style="display:none;position:absolute;top:48px;right:0;width:340px;background:white;border-radius:var(--r-xl);box-shadow:0 12px 40px rgba(0,0,0,.15);border:1px solid var(--border);z-index:1000;max-height:480px;overflow-y:auto">
+            <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-family:var(--ff-d);font-weight:700;color:var(--navy)">🔔 Pending Applications</div>
+            <div id="adminNotifList"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -140,6 +148,9 @@
         <div class="panel-head">
           <div class="panel-title">Manage Doctors</div>
           <span class="adm-badge" style="background:var(--teal-l);color:var(--teal);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px"><span id="docCount">0</span> active</span>
+        </div>
+        <div style="padding:12px 16px 0 16px">
+          <input type="text" id="doctorSearchInput" oninput="filterAdminDoctors()" placeholder="🔍 Search by name, specialty, city, email..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
         </div>
         <div id="docManageList">
           <div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading doctors...</div>
@@ -259,10 +270,29 @@
       <div class="panel">
         <div class="panel-head">
           <div class="panel-title">Recent Bookings & Patient Search</div>
-          <span style="font-size:12px;color:var(--navy-m)">Live feed</span>
+          <span style="font-size:12px;color:var(--navy-m)" id="bookingCount">Live feed</span>
         </div>
         <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
-          <input type="text" id="patientSearchInput" oninput="searchPatientBookings()" placeholder="🔍 Search by phone, name, or token..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
+          <input type="text" id="patientSearchInput" oninput="applyBookingFilters()" placeholder="🔍 Search by phone, name, or token..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
+          <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center">
+            <select id="filterDoctor" onchange="applyBookingFilters()" style="flex:1;min-width:140px;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:13px;background:white;outline:none">
+              <option value="">All Doctors</option>
+            </select>
+            <select id="filterStatus" onchange="applyBookingFilters()" style="flex:1;min-width:120px;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:13px;background:white;outline:none">
+              <option value="">All Status</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="done">Done</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <select id="filterDate" onchange="applyBookingFilters()" style="flex:1;min-width:120px;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:13px;background:white;outline:none">
+              <option value="">All Dates</option>
+              <option value="today">Today</option>
+              <option value="tomorrow">Tomorrow</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+            </select>
+            <button onclick="clearBookingFilters()" style="padding:8px 14px;background:var(--bg);border:1.5px solid var(--border-md);border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy)">✕ Clear</button>
+          </div>
         </div>
         <div id="recentBookingsTable"><div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">Loading bookings...</div></div>
       </div>
@@ -312,7 +342,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=39"></script>
 <script>
   const d = new Date();
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
