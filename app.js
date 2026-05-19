@@ -422,6 +422,10 @@ async function handleAuthStateChange(user) {
       if (typeof window.applyAvailabilityUI === "function") {
         window.applyAvailabilityUI(docMatch.available === false);
       }
+      // Apply existing profile photo if doctor has uploaded one
+      if (docMatch.photoUrl && typeof window._applyDoctorPhotoToSidebar === "function") {
+        window._applyDoctorPhotoToSidebar(docMatch.photoUrl);
+      }
       showContent();
       document.dispatchEvent(new Event("doctor-ready"));
     } else {
@@ -938,7 +942,7 @@ if (document.getElementById("homeDoctorsGrid") || document.getElementById("homeS
     grid.innerHTML = featured.map(d => `
       <div class="doc-card">
         <a href="doctor-profile.html?id=${d.id}" style="text-decoration:none;color:inherit">
-          <div class="doc-photo">${escapeHtml(d.avatar || "👨‍⚕️")}</div>
+          <div class="doc-photo" style="${d.photoUrl ? "padding:0;overflow:hidden" : ""}">${d.photoUrl ? `<img src="${escapeHtml(d.photoUrl)}" alt="Dr. ${escapeHtml(d.name)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : escapeHtml(d.avatar || "👨‍⚕️")}</div>
         </a>
         <div class="doc-info">
           <a href="doctor-profile.html?id=${d.id}" style="text-decoration:none;color:inherit">
@@ -1217,7 +1221,7 @@ if (document.getElementById("docList")) {
       const onclickData = `'${sName}','${sAvatar}','${sSpec}','${sFee}','${sCred}'`;
       return `
         <div class="doc-list-card" data-spec="${d.specialtyCategory || 'Other'}" data-docid="${d.id}" onclick="selectDoc(this,${onclickData})">
-          <div class="dla">${sAvatar}</div>
+          <div class="dla" style="${d.photoUrl ? "padding:0;overflow:hidden" : ""}">${d.photoUrl ? `<img src="${escapeHtml(d.photoUrl)}" alt="${sName}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : sAvatar}</div>
           <div class="dli">
             <div class="dli-name">${sName}</div>
             <div class="dli-spec">${sSpec}${sCity ? ' · ' + sCity : ''}</div>
@@ -2612,6 +2616,92 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
     _downloadCSV(lines.join("\r\n"), `patients-${safeName}-${stamp}.csv`);
   };
 
+  /* ─── DOCTOR PROFILE PHOTO UPLOAD ─── */
+  // Resizes a File to a 400x400 JPEG dataURL under ~150KB for Firestore storage
+  function _resizeImageToDataURL(file, maxDim) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width, h = img.height;
+          const ratio = Math.min(maxDim / w, maxDim / h, 1);
+          w = Math.round(w * ratio); h = Math.round(h * ratio);
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+          // Try qualities until under 150KB
+          let quality = 0.85;
+          let dataUrl = canvas.toDataURL('image/jpeg', quality);
+          while (dataUrl.length > 200_000 && quality > 0.4) {
+            quality -= 0.1;
+            dataUrl = canvas.toDataURL('image/jpeg', quality);
+          }
+          resolve(dataUrl);
+        };
+        img.onerror = () => reject(new Error('Could not load image'));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  window.uploadDoctorPhoto = async function (file) {
+    if (!file) return;
+    if (!/^image\/(jpeg|jpg|png|webp)$/i.test(file.type)) {
+      alert('⚠️ Please choose a JPG, PNG, or WebP image.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      alert('⚠️ Image is too large (over 8 MB). Please pick a smaller photo.');
+      return;
+    }
+    const me = window._currentDoctor || {};
+    if (!me.id) { alert('⚠️ Profile not loaded. Please refresh and try again.'); return; }
+
+    // Show "Uploading..." state
+    const av = document.getElementById('sbAvatar');
+    let oldHTML = '';
+    if (av) {
+      oldHTML = av.innerHTML;
+      av.innerHTML = '<div style="font-size:12px;color:white;font-weight:600">Uploading…</div>';
+      av.style.background = 'var(--teal)';
+    }
+
+    try {
+      const photoDataUrl = await _resizeImageToDataURL(file, 400);
+
+      const { doc, updateDoc } = window._fs;
+      await updateDoc(doc(db, 'doctors', me.id), { photoUrl: photoDataUrl });
+
+      window._currentDoctor = { ...me, photoUrl: photoDataUrl };
+      _applyDoctorPhotoToSidebar(photoDataUrl);
+      alert('✅ Photo updated! Patients will see it on the booking page.');
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      if (av) { av.innerHTML = oldHTML; av.style.background = ''; }
+      alert('❌ Could not upload: ' + (err.message || err) + '\n\nIf this says "permission denied", make sure you published the latest firestore.rules.');
+    }
+  };
+
+  // Renders the uploaded photo into the sidebar circle
+  function _applyDoctorPhotoToSidebar(photoUrl) {
+    const av = document.getElementById('sbAvatar');
+    if (!av) return;
+    av.style.background = '';
+    av.innerHTML = `<img src="${photoUrl}" alt="Profile" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit"><div class="photo-edit-overlay" style="position:absolute;inset:0;background:rgba(0,0,0,0.55);color:white;display:none;align-items:center;justify-content:center;font-size:11px;font-weight:600;text-align:center;line-height:1.3;border-radius:inherit">📷<br>Change<br>photo</div>`;
+    // Re-bind hover listeners since we replaced innerHTML
+    const overlay = av.querySelector('.photo-edit-overlay');
+    if (overlay) {
+      av.addEventListener('mouseenter', () => { overlay.style.display = 'flex'; });
+      av.addEventListener('mouseleave', () => { overlay.style.display = 'none'; });
+    }
+  }
+  window._applyDoctorPhotoToSidebar = _applyDoctorPhotoToSidebar;
+
   // Click outside to close
   document.addEventListener("click", function (e) {
     const modal = document.getElementById("patientHistoryModal");
@@ -3503,7 +3593,7 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
         ? `<div style="padding:24px;text-align:center;color:var(--navy-m);font-size:14px">No doctors added yet. Use the form below to add your first doctor.</div>`
         : doctors.map(d => `
             <div class="appt-item">
-              <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px">${escapeHtml(d.avatar||"👨‍⚕️")}</div>
+              <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px;${d.photoUrl ? 'padding:0;overflow:hidden' : ''}">${d.photoUrl ? `<img src="${escapeHtml(d.photoUrl)}" alt="${escapeHtml(d.name)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : escapeHtml(d.avatar||"👨‍⚕️")}</div>
               <div class="ai-info">
                 <div class="ai-name">${escapeHtml(d.name)}${d.available === false ? ' <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FEF3C7;color:#92400E;margin-left:6px">OFFLINE</span>' : ''}</div>
                 <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
@@ -3832,7 +3922,7 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     }
     docList.innerHTML = filtered.map(d => `
       <div class="appt-item">
-        <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px">${escapeHtml(d.avatar||"👨‍⚕️")}</div>
+        <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px;${d.photoUrl ? 'padding:0;overflow:hidden' : ''}">${d.photoUrl ? `<img src="${escapeHtml(d.photoUrl)}" alt="${escapeHtml(d.name)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : escapeHtml(d.avatar||"👨‍⚕️")}</div>
         <div class="ai-info">
           <div class="ai-name">${escapeHtml(d.name)}${d.available === false ? ' <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FEF3C7;color:#92400E;margin-left:6px">OFFLINE</span>' : ''}</div>
           <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
@@ -4476,7 +4566,10 @@ if (document.getElementById("doctorProfileWrap")) {
     wrap.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:32px;align-items:start;max-width:1080px;margin:0 auto">
         <div style="background:white;border-radius:var(--r-xl);padding:32px 28px;border:1px solid var(--border);text-align:center;position:sticky;top:100px">
-          <div style="font-size:90px;line-height:1;margin-bottom:14px">${escapeHtml(doc.avatar || "👨‍⚕️")}</div>
+          ${doc.photoUrl
+            ? `<div style="width:140px;height:140px;margin:0 auto 14px;border-radius:50%;overflow:hidden;border:4px solid var(--teal-l)"><img src="${escapeHtml(doc.photoUrl)}" alt="Dr. ${escapeHtml(doc.name)}" style="width:100%;height:100%;object-fit:cover"></div>`
+            : `<div style="font-size:90px;line-height:1;margin-bottom:14px">${escapeHtml(doc.avatar || "👨‍⚕️")}</div>`
+          }
           <h1 style="font-family:var(--ff-d);font-size:28px;font-weight:700;color:var(--navy);margin-bottom:6px;line-height:1.2">${escapeHtml(doc.name)}</h1>
           <div style="font-size:15px;color:var(--teal);font-weight:600;margin-bottom:12px">${escapeHtml(doc.specialty || "")}</div>
           ${avgRating ? `<div style="display:inline-block;padding:6px 14px;background:#FEF3C7;color:#92400E;border-radius:20px;font-size:13px;font-weight:700;margin-bottom:14px">★ ${avgRating} (${myReviews.length} review${myReviews.length === 1 ? "" : "s"})</div>` : `<div style="display:inline-block;padding:6px 14px;background:var(--bg);color:var(--navy-m);border-radius:20px;font-size:13px;margin-bottom:14px">New on HealthFirst</div>`}
