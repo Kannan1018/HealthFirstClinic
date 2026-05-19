@@ -103,6 +103,7 @@
       <button class="sb-link" onclick="showSection('schedule',this)"><span class="sb-link-icon">📅</span> My Schedule</button>
       <button class="sb-link" onclick="showSection('patients',this)"><span class="sb-link-icon">👥</span> Patient Records</button>
       <button class="sb-link" onclick="showSection('earnings',this)"><span class="sb-link-icon">💰</span> Earnings</button>
+      <button class="sb-link" onclick="showSection('notes',this)"><span class="sb-link-icon">📝</span> My Notes</button>
       <a href="index.html" class="sb-link" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px"><span class="sb-link-icon">🏥</span> Public Site</a>
       <a href="admin.html" class="sb-link" id="sidebarAdminLink" style="display:none"><span class="sb-link-icon">📊</span> Admin Panel</a>
       <button class="sb-link signout-link" onclick="doAdminLogout()"><span class="sb-link-icon">🚪</span> Sign Out</button>
@@ -256,6 +257,21 @@
         <div style="background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px;font-size:13px;color:var(--navy-m);line-height:1.6">
           💡 <strong style="color:var(--navy)">Quick tip:</strong> Fill in patient details and medicines below. Once saved, the prescription can be shared with the patient over WhatsApp.
         </div>
+
+        <!-- PRESCRIPTION HISTORY SEARCH (collapsible) -->
+        <details class="panel" style="margin-bottom:18px" id="rxHistoryDetails">
+          <summary style="cursor:pointer;padding:14px 18px;font-family:var(--ff-d);font-weight:700;color:var(--navy);font-size:15px;display:flex;justify-content:space-between;align-items:center;list-style:none">
+            <span>🔍 Look up a past prescription</span>
+            <span style="font-size:12px;color:var(--navy-m);font-weight:500" id="rxHistoryHint">Tap to expand</span>
+          </summary>
+          <div style="padding:0 18px 18px 18px">
+            <input type="text" id="rxHistorySearch" oninput="searchPrescriptionHistory()" placeholder="Search by patient name, phone, diagnosis, or medicine..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none;margin-bottom:14px">
+            <div id="rxHistoryResults" style="max-height:340px;overflow-y:auto">
+              <div style="text-align:center;color:var(--navy-m);font-size:13px;padding:20px">Loading…</div>
+            </div>
+          </div>
+        </details>
+
         <div class="panel">
           <div class="panel-head">
             <div class="panel-title">💊 Write Digital Prescription</div>
@@ -430,6 +446,28 @@
       </div>
     </div>
 
+    <!-- NOTES SECTION (private to the doctor) -->
+    <div id="section-notes" style="display:none">
+      <div style="max-width:780px">
+        <div style="background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px;font-size:13px;color:var(--navy-m);line-height:1.6">
+          💡 <strong style="color:var(--navy)">Your private journal:</strong> Jot down quick notes between appointments — reminders, observations, follow-up tasks. Only you can see these. Auto-saves as you type.
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">📝 My Notes</div>
+            <span id="notesSaveStatus" style="font-size:12px;color:var(--navy-m);font-weight:500">—</span>
+          </div>
+          <div style="padding:18px 20px">
+            <textarea id="myNotesTextarea" oninput="onNotesChange()" placeholder="Examples:&#10;• Call lab about Mr. Sharma's report&#10;• Follow up with Anita next week&#10;• Stock running low on Adapalene gel&#10;• Conference on May 25 — block off the schedule" style="width:100%;min-height:380px;padding:14px 16px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none;resize:vertical;line-height:1.6"></textarea>
+            <div style="margin-top:10px;font-size:11px;color:var(--navy-m);display:flex;justify-content:space-between;align-items:center">
+              <span>🔒 Only visible to you · Auto-saved to your account</span>
+              <span id="notesCharCount">0 characters</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -573,7 +611,7 @@
   });
 
   function showSection(id, btn) {
-    ['today','prescription','schedule','patients','earnings'].forEach(s => {
+    ['today','prescription','schedule','patients','earnings','notes'].forEach(s => {
       document.getElementById('section-'+s).style.display = 'none';
     });
     document.getElementById('section-'+id).style.display = 'block';
@@ -588,6 +626,11 @@
     // Refresh prescription patient picker when entering prescription tab
     if (id === 'prescription' && typeof window.populatePrescriptionDropdown === 'function') {
       window.populatePrescriptionDropdown();
+      if (typeof window.loadPrescriptionHistory === 'function') window.loadPrescriptionHistory();
+    }
+    // Load private notes when entering notes tab
+    if (id === 'notes' && typeof window.loadMyNotes === 'function') {
+      window.loadMyNotes();
     }
   }
 
