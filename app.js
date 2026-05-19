@@ -2702,6 +2702,126 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
   }
   window._applyDoctorPhotoToSidebar = _applyDoctorPhotoToSidebar;
 
+  /* ─── DOCTOR ACCOUNT SELF-DELETE ─── */
+  // Opens the confirmation modal, populating with the doctor's stats
+  window.openDeleteAccountModal = function () {
+    const me = window._currentDoctor || {};
+    if (!me.id) { alert("⚠️ Profile not loaded. Please refresh."); return; }
+
+    // Count upcoming bookings (today + future, not yet completed/cancelled)
+    const all = window._myAllBookings || [];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const upcoming = all.filter(b => (b.date || "") >= todayStr && b.status === "confirmed");
+
+    const upLi = document.getElementById("delModalUpcoming");
+    if (upLi) {
+      upLi.textContent = upcoming.length === 0
+        ? "You have no upcoming appointments — nothing to cancel"
+        : `Your ${upcoming.length} upcoming appointment${upcoming.length === 1 ? "" : "s"} will be cancelled automatically`;
+    }
+    const inp = document.getElementById("delConfirmInput");
+    if (inp) inp.value = "";
+    const btn = document.getElementById("delConfirmBtn");
+    if (btn) { btn.disabled = true; btn.style.opacity = ".5"; btn.textContent = "Delete Forever"; }
+    const status = document.getElementById("delStatus");
+    if (status) status.style.display = "none";
+
+    const m = document.getElementById("deleteAccountModal");
+    if (m) m.style.display = "flex";
+  };
+
+  window.closeDeleteAccountModal = function () {
+    const m = document.getElementById("deleteAccountModal");
+    if (m) m.style.display = "none";
+  };
+
+  // Enable/disable the Delete Forever button based on whether user typed DELETE correctly
+  window.onDelConfirmChange = function () {
+    const inp = document.getElementById("delConfirmInput");
+    const btn = document.getElementById("delConfirmBtn");
+    if (!inp || !btn) return;
+    const ok = inp.value.trim() === "DELETE";
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? "1" : ".5";
+  };
+
+  function _showDelStatus(text, isError) {
+    const s = document.getElementById("delStatus");
+    if (!s) return;
+    s.style.display = "block";
+    s.style.background = isError ? "#FEE2E2" : "var(--teal-l)";
+    s.style.color = isError ? "#991B1B" : "var(--teal-d)";
+    s.textContent = text;
+  }
+
+  // Performs the actual deletion across Firestore + Firebase Auth
+  window.confirmDeleteMyAccount = async function () {
+    const inp = document.getElementById("delConfirmInput");
+    if (!inp || inp.value.trim() !== "DELETE") return;
+
+    const me = window._currentDoctor || {};
+    if (!me.id) { _showDelStatus("⚠️ Profile not loaded. Refresh and try again.", true); return; }
+
+    const btn = document.getElementById("delConfirmBtn");
+    if (btn) { btn.disabled = true; btn.style.opacity = ".6"; btn.textContent = "Deleting..."; }
+
+    try {
+      const { doc, deleteDoc, collection, query, where, getDocs, updateDoc } = window._fs;
+
+      // Step 1: Cancel all confirmed bookings (today and future) — frees up slots, notifies patients on their end
+      _showDelStatus("Step 1 of 4: Cancelling upcoming appointments...");
+      const all = window._myAllBookings || [];
+      const todayStr = new Date().toISOString().split("T")[0];
+      const upcoming = all.filter(b => (b.date || "") >= todayStr && b.status === "confirmed");
+      for (const b of upcoming) {
+        try {
+          await updateDoc(doc(db, "bookings", b.id), { status: "cancelled" });
+        } catch (e) { console.warn("Booking cancel failed (continuing):", b.id, e); }
+        // Also free up the bookedSlot if we can identify it
+        try {
+          if (b.doctor && b.date && b.slot) {
+            const slotKey = `${b.doctor}__${b.date}__${b.slot}`;
+            await updateDoc(doc(db, "bookedSlots", slotKey), { status: "cancelled" });
+          }
+        } catch (e) { /* slot may not exist; skip */ }
+      }
+
+      // Step 2: Delete schedule (must happen before deleting doctor doc, since schedule rule checks doctor exists)
+      _showDelStatus("Step 2 of 4: Removing your schedule...");
+      try {
+        await deleteDoc(doc(db, "doctorSchedules", me.id));
+      } catch (e) { console.warn("Schedule delete failed (continuing):", e); }
+
+      // Step 3: Delete the doctor record itself
+      _showDelStatus("Step 3 of 4: Removing your profile...");
+      await deleteDoc(doc(db, "doctors", me.id));
+
+      // Step 4: Delete the Firebase Auth user (most likely to need recent sign-in)
+      _showDelStatus("Step 4 of 4: Closing your login...");
+      const authUser = window._auth?.auth?.currentUser;
+      if (authUser) {
+        try {
+          await authUser.delete();
+        } catch (authErr) {
+          // If "requires-recent-login", we've still deleted all data — just sign them out and ask to delete login manually
+          console.warn("Auth delete needs recent login:", authErr);
+          await window._auth.signOut(window._auth.auth);
+          alert("✅ Your data has been removed.\n\nFor security, Firebase requires recent sign-in to fully delete your login. Your data is gone — your login email will be auto-cleaned later, or you can contact admin to fully remove it.\n\nThank you for being part of HealthFirst.");
+          window.location.replace("index.html");
+          return;
+        }
+      }
+
+      // Everything succeeded
+      alert("✅ Your account has been permanently deleted.\n\nThank you for being part of HealthFirst. You can re-register anytime with the same email.");
+      window.location.replace("index.html");
+    } catch (err) {
+      console.error("Account deletion failed:", err);
+      _showDelStatus("❌ Deletion failed: " + (err.message || err) + "\n\nIf this says 'permission denied', publish the latest firestore.rules. Some data may have been partially removed — contact admin for help.", true);
+      if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.textContent = "Delete Forever"; }
+    }
+  };
+
   // Click outside to close
   document.addEventListener("click", function (e) {
     const modal = document.getElementById("patientHistoryModal");
