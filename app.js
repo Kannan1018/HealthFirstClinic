@@ -420,6 +420,10 @@ async function handleAuthStateChange(user) {
       window._currentDoctor = docMatch;
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email;
+      // Apply availability toggle state from doctor record (defaults to available)
+      if (typeof window.applyAvailabilityUI === "function") {
+        window.applyAvailabilityUI(docMatch.available === false);
+      }
       showContent();
       document.dispatchEvent(new Event("doctor-ready"));
     } else {
@@ -754,12 +758,16 @@ async function updateBookingStatus(id, status) {
 }
 
 /* ─── Doctor CRUD ─── */
-async function loadDoctors() {
+async function loadDoctors(opts = {}) {
   if (!firebaseReady) return [];
   const { collection, getDocs } = window._fs;
   try {
     const snap = await getDocs(collection(db, "doctors"));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.active !== false);
+    let list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.active !== false);
+    // For public-facing pages (booking page, homepage), hide doctors who marked themselves offline.
+    // Admin and doctor's own dashboard pass {includeUnavailable: true}.
+    if (!opts.includeUnavailable) list = list.filter(d => d.available !== false);
+    return list;
   } catch (e) { console.error("loadDoctors:", e); return []; }
 }
 
@@ -1649,6 +1657,7 @@ if (document.getElementById("queue-upcoming")) {
         </div>
         <div class="ai-actions">
           <button type="button" class="ai-btn done queue-done-btn" data-id="${escapeHtml(b.id)}" data-name="${escapeHtml(b.patientName || "")}" data-phone="${escapeHtml(phoneAttr)}">✓ Done</button>
+          <button type="button" class="ai-btn queue-noshow-btn" data-id="${escapeHtml(b.id)}" style="background:#FEF3C7;color:#92400E;border:1px solid #FBBF24" title="Patient didn't show up">⊘ No-Show</button>
           <button type="button" class="ai-btn cancel queue-cancel-btn" data-id="${escapeHtml(b.id)}">✗ Cancel</button>
         </div>
       </div>`;
@@ -1730,6 +1739,14 @@ if (document.getElementById("queue-upcoming")) {
         const id = btn.getAttribute("data-id");
         console.log("[Cancel clicked]", { id });
         window.cancelAppt(id);
+      });
+    });
+    container.querySelectorAll(".queue-noshow-btn").forEach(btn => {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        const id = btn.getAttribute("data-id");
+        console.log("[No-Show clicked]", { id });
+        window.markNoShow(id);
       });
     });
     container.querySelectorAll(".patient-history-trigger").forEach(el => {
@@ -2081,9 +2098,10 @@ if (document.getElementById("queue-upcoming")) {
             ${waUrl ? `<a href="${waUrl}" target="_blank" style="flex:1;min-width:90px;text-align:center;padding:9px;background:#25D366;color:white;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">💬 Send Reminder</a>` : ""}
             ${callUrl ? `<a href="${callUrl}" style="flex:1;min-width:90px;text-align:center;padding:9px;background:var(--blue);color:white;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">📞 Call</a>` : ""}
           </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button onclick="closeSlotDetail(); markDone('${b.id}', '${(b.patientName || '').replace(/'/g, "\\'")}', '${phoneClean}')" style="flex:1;padding:10px;background:var(--green);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✓ Mark Done + Feedback</button>
-            <button onclick="closeSlotDetail(); cancelAppt('${b.id}')" style="flex:1;padding:10px;background:var(--red);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button onclick="closeSlotDetail(); markDone('${b.id}', '${(b.patientName || '').replace(/'/g, "\\'")}', '${phoneClean}')" style="flex:1;min-width:100px;padding:10px;background:var(--green);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✓ Done</button>
+            <button onclick="closeSlotDetail(); markNoShow('${b.id}')" style="flex:1;min-width:100px;padding:10px;background:#FBBF24;color:#7C2D12;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)" title="Patient didn't show up">⊘ No-Show</button>
+            <button onclick="closeSlotDetail(); cancelAppt('${b.id}')" style="flex:1;min-width:100px;padding:10px;background:var(--red);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
           </div>
         </div>`;
     }
@@ -2618,6 +2636,171 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
     loadTodayQueue(); // refresh all data
   };
 
+  window.markNoShow = async function (id) {
+    console.log("[markNoShow called]", { id });
+    if (!id) { alert("⚠️ No booking ID — can't mark no-show."); return; }
+    if (!confirm("Mark this patient as a No-Show?\n\nUse this when the patient didn't arrive and didn't inform you.\nDifferent from a cancellation (patient told you they wouldn't come).")) return;
+    const result = await updateBookingStatus(id, "no_show");
+    if (!result.ok) {
+      alert("❌ Couldn't mark as no-show.\n\n" + (result.error || "Unknown error") + "\n\nThis is usually a Firestore permissions issue — please check your firestore.rules in Firebase Console.");
+      return;
+    }
+    alert("⊘ Marked as No-Show.");
+    loadTodayQueue();
+  };
+
+  /* ─── WALK-IN PATIENT (doctor adds patient who just walked in) ─── */
+  window.openWalkInModal = function () {
+    // Clear previous values
+    ['wiName', 'wiPhone', 'wiAge', 'wiGender', 'wiReason'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const status = document.getElementById('wiStatus');
+    if (status) status.style.display = 'none';
+    const m = document.getElementById('walkInModal');
+    if (m) m.style.display = 'flex';
+  };
+
+  window.closeWalkInModal = function () {
+    const m = document.getElementById('walkInModal');
+    if (m) m.style.display = 'none';
+  };
+
+  function _showWiStatus(text, isError) {
+    const s = document.getElementById('wiStatus');
+    if (!s) return;
+    s.style.display = 'block';
+    s.style.background = isError ? '#FEE2E2' : 'var(--teal-l)';
+    s.style.color = isError ? '#991B1B' : 'var(--teal-d)';
+    s.textContent = text;
+  }
+
+  // Build a slot label from a Date object that matches the system's format ("9:30 AM")
+  function _currentTimeSlotLabel() {
+    const d = new Date();
+    let hours = d.getHours();
+    let minutes = Math.floor(d.getMinutes() / 5) * 5; // round down to nearest 5 minutes
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours === 0 ? 12 : (hours > 12 ? hours - 12 : hours);
+    const displayMinutes = minutes === 0 ? '00' : (minutes < 10 ? '0' + minutes : minutes);
+    return `${displayHours}:${displayMinutes} ${period}`;
+  }
+
+  window.submitWalkIn = async function () {
+    const name = (document.getElementById('wiName')?.value || '').trim();
+    let phone = (document.getElementById('wiPhone')?.value || '').replace(/\D/g, '');
+    const age = (document.getElementById('wiAge')?.value || '').trim();
+    const gender = document.getElementById('wiGender')?.value || '';
+    const reason = (document.getElementById('wiReason')?.value || '').trim() || 'Walk-in consultation';
+
+    if (!name) { _showWiStatus('⚠️ Please enter the patient name.', true); return; }
+    if (!phone || phone.length < 10) { _showWiStatus('⚠️ Please enter a valid 10-digit phone number.', true); return; }
+    if (phone.length > 15) phone = phone.slice(0, 15);
+
+    const me = window._currentDoctor || {};
+    if (!me.id || !me.name) { _showWiStatus('⚠️ Doctor profile not loaded. Please refresh.', true); return; }
+
+    const today = new Date().toISOString().split('T')[0];
+    const allMy = window._myAllBookings || [];
+    const todays = allMy.filter(b => b.date === today && b.status !== 'cancelled');
+
+    // Token = next sequential number for today
+    const maxToken = todays.reduce((m, b) => {
+      const n = parseInt((b.token || '0').toString().replace(/\D/g, ''), 10);
+      return n > m ? n : m;
+    }, 0);
+    const token = String(maxToken + 1).padStart(3, '0');
+    const slot = _currentTimeSlotLabel() + ' (Walk-in)';
+    const dateDisplay = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    const lookupToken = 'wi_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+
+    const submitBtn = document.getElementById('wiSubmitBtn');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Adding...'; }
+
+    try {
+      const { collection, addDoc, doc, setDoc, serverTimestamp } = window._fs;
+
+      const bookingData = {
+        patientName: name,
+        phone: phone,
+        age: age || '',
+        gender: gender || '',
+        doctor: me.name,
+        doctorEmail: (window._auth?.auth?.currentUser?.email) || me.email || '',
+        doctorId: me.id,
+        specialty: me.specialty || '',
+        date: today,
+        dateDisplay: dateDisplay,
+        slot: slot,
+        token: token,
+        fee: me.fee || 0,
+        reason: reason,
+        status: 'confirmed',
+        paymentMethod: 'cash',
+        isWalkIn: true,
+        lookupToken: lookupToken,
+        createdAt: serverTimestamp()
+      };
+
+      await addDoc(collection(db, 'bookings'), bookingData);
+
+      // Also create a publicBookings entry so patient cancellation logic stays consistent
+      try {
+        await setDoc(doc(db, 'publicBookings', lookupToken), {
+          bookingId: lookupToken,
+          doctor: me.name,
+          date: today,
+          slot: slot,
+          status: 'confirmed',
+          createdAt: serverTimestamp()
+        });
+      } catch (e) { console.warn('publicBookings create skipped:', e); }
+
+      _showWiStatus(`✅ ${name} added as Token #${token} at ${slot}!`);
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '+ Add to Queue'; }
+
+      // Refresh queue, then auto-close modal after a brief moment
+      await loadTodayQueue();
+      setTimeout(closeWalkInModal, 1500);
+    } catch (err) {
+      console.error('Walk-in submission failed:', err);
+      _showWiStatus('❌ Could not add: ' + (err.message || err), true);
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '+ Add to Queue'; }
+    }
+  };
+
+  /* ─── DOCTOR AVAILABILITY TOGGLE ─── */
+  // Flips the doctor's "available" flag in Firestore. When false, the doctor is hidden from booking page.
+  window.setMyAvailability = async function () {
+    const me = window._currentDoctor || {};
+    if (!me.id) { alert("⚠️ Doctor profile not loaded. Please refresh."); return; }
+
+    const toggleEl = document.getElementById('sbToggle');
+    const currentlyOff = toggleEl && toggleEl.classList.contains('off');
+    const newAvailable = currentlyOff; // if currently off → going to available; if currently on → going to offline
+
+    // Optimistic UI update — flip immediately for responsiveness
+    if (typeof window.applyAvailabilityUI === 'function') window.applyAvailabilityUI(!newAvailable);
+
+    try {
+      const { doc, updateDoc } = window._fs;
+      await updateDoc(doc(db, "doctors", me.id), { available: newAvailable });
+      window._currentDoctor = { ...me, available: newAvailable };
+      // Brief confirmation toast in the label
+      const label = document.getElementById('availLabel');
+      if (label) {
+        label.textContent = newAvailable ? '✓ Now Available' : '✓ Now Offline';
+        setTimeout(() => { if (typeof window.applyAvailabilityUI === 'function') window.applyAvailabilityUI(!newAvailable); }, 1400);
+      }
+    } catch (err) {
+      console.error('setMyAvailability failed:', err);
+      // Revert UI on error
+      if (typeof window.applyAvailabilityUI === 'function') window.applyAvailabilityUI(currentlyOff);
+      alert('❌ Could not update availability: ' + (err.message || err) + '\n\nThis is usually a Firestore permissions issue — make sure you published the latest firestore.rules.');
+    }
+  };
+
   /* ─── PRESCRIPTION SAVE / WHATSAPP / PRINT ─── */
 
   // Collects current form values into a clean object
@@ -2861,7 +3044,7 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
         </div>
         <div id="scheduleGrid"></div>
       `;
-      const doctors = await loadDoctors();
+      const doctors = await loadDoctors({ includeUnavailable: true });
       const picker = document.getElementById("adminDocPicker");
       doctors.forEach(d => {
         const opt = document.createElement("option");
@@ -3132,7 +3315,7 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
   async function loadAdminData() {
     const bookings = await loadBookings();
     const reviews = await loadReviews();
-    const doctors = await loadDoctors();
+    const doctors = await loadDoctors({ includeUnavailable: true });
     const applications = await loadDoctorApplications();
     window._adminAllBookings = bookings; // cache for filtering
     window._adminAllDoctors = doctors;
@@ -3151,7 +3334,7 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
             <div class="appt-item">
               <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px">${escapeHtml(d.avatar||"👨‍⚕️")}</div>
               <div class="ai-info">
-                <div class="ai-name">${escapeHtml(d.name)}</div>
+                <div class="ai-name">${escapeHtml(d.name)}${d.available === false ? ' <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FEF3C7;color:#92400E;margin-left:6px">OFFLINE</span>' : ''}</div>
                 <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
                 <div class="ai-detail" style="margin-top:3px;font-size:11px">${d.email ? "🔑 " + escapeHtml(d.email) : "<span style='color:var(--amber)'>⚠️ No login email — add one</span>"}</div>
               </div>
@@ -3480,7 +3663,7 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
       <div class="appt-item">
         <div class="ai-token" style="background:var(--teal-l);color:var(--teal-d);font-size:18px">${escapeHtml(d.avatar||"👨‍⚕️")}</div>
         <div class="ai-info">
-          <div class="ai-name">${escapeHtml(d.name)}</div>
+          <div class="ai-name">${escapeHtml(d.name)}${d.available === false ? ' <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#FEF3C7;color:#92400E;margin-left:6px">OFFLINE</span>' : ''}</div>
           <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
           <div class="ai-detail" style="margin-top:3px;font-size:11px">${d.email ? "🔑 " + escapeHtml(d.email) : "<span style='color:var(--amber)'>⚠️ No login email — add one</span>"}</div>
         </div>
