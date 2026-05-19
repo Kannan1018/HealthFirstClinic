@@ -1934,9 +1934,9 @@ if (document.getElementById("queue-upcoming")) {
           const bookings = bookingsBySlot[slot];
           const count = bookings.length;
           const bg = isCurrent ? "var(--teal)" : (isPast ? "var(--navy-m)" : "var(--teal-d)");
-          return `<div title="${escapeHtml(slot)} — ${count} booking${count === 1 ? "" : "s"}" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px">
+          return `<div title="${escapeHtml(slot)} — ${count} booking${count === 1 ? "" : "s"}" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:62px">
             <div style="width:100%;height:36px;background:${bg};color:white;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">${count}</div>
-            <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot.replace(/:00 /, ' ').replace(' AM', 'a').replace(' PM', 'p'))}</div>
+            <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot)}</div>
           </div>`;
         }).join("")}</div>
         <div style="margin-top:10px;font-size:11px;color:var(--navy-m);text-align:center">Numbers show how many bookings at each slot</div>`;
@@ -2017,9 +2017,9 @@ if (document.getElementById("queue-upcoming")) {
 
       const borderStyle = isCurrent && !b ? "border:2px solid var(--teal);" : "border:1px solid var(--border);";
 
-      return `<div data-slot="${escapeHtml(slot)}" class="timeline-slot-click" title="${escapeHtml(slot)} — ${escapeHtml(hoverContent)} (click for details)" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:48px;cursor:pointer">
+      return `<div data-slot="${escapeHtml(slot)}" class="timeline-slot-click" title="${escapeHtml(slot)} — ${escapeHtml(hoverContent)} (click for details)" style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:62px;cursor:pointer">
         <div style="width:100%;height:36px;background:${bg};color:${color};${borderStyle}border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;transition:transform .1s" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform=''">${label}</div>
-        <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot.replace(/:00 /, ' ').replace(' AM', 'a').replace(' PM', 'p'))}</div>
+        <div style="font-size:10px;color:${isPast ? 'var(--navy-h)' : 'var(--navy-m)'};font-weight:600;white-space:nowrap">${escapeHtml(slot)}</div>
       </div>`;
     }).join("");
 
@@ -2621,6 +2621,159 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
     _downloadCSV(lines.join("\r\n"), `patients-${safeName}-${stamp}.csv`);
   };
 
+  /* ─── PRESCRIPTION HISTORY (search + view past prescriptions doctor has written) ─── */
+
+  window.loadPrescriptionHistory = async function () {
+    const wrap = document.getElementById("rxHistoryResults");
+    if (!wrap) return;
+
+    const authEmail = window._auth?.auth?.currentUser?.email;
+    if (!authEmail) { wrap.innerHTML = `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:14px">Not signed in.</div>`; return; }
+
+    // Avoid re-loading if we already have data
+    if (window._myPrescriptions && window._myPrescriptions.length > 0) {
+      renderPrescriptionHistory(window._myPrescriptions);
+      return;
+    }
+
+    try {
+      const { collection, query, where, getDocs } = window._fs;
+      const q = query(collection(db, "prescriptions"), where("doctorEmail", "==", authEmail));
+      const snap = await getDocs(q);
+      const list = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      window._myPrescriptions = list;
+      renderPrescriptionHistory(list);
+      // Cache for reprint via window._cachedPrescriptions too
+      window._cachedPrescriptions = window._cachedPrescriptions || {};
+      list.forEach(p => { window._cachedPrescriptions[p.id] = p; });
+    } catch (err) {
+      console.error("Prescription history load failed:", err);
+      wrap.innerHTML = `<div style="text-align:center;color:#991B1B;font-size:13px;padding:14px">Could not load: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  };
+
+  function renderPrescriptionHistory(list) {
+    const wrap = document.getElementById("rxHistoryResults");
+    const hint = document.getElementById("rxHistoryHint");
+    if (!wrap) return;
+    if (hint) hint.textContent = `${list.length} prescription${list.length === 1 ? "" : "s"}`;
+
+    if (list.length === 0) {
+      wrap.innerHTML = `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:14px">No prescriptions yet. Saved prescriptions will appear here.</div>`;
+      return;
+    }
+
+    wrap.innerHTML = list.slice(0, 50).map(p => {
+      const medsLine = (p.medicines || []).slice(0, 3).map(m => m.name).filter(Boolean).join(", ") + ((p.medicines || []).length > 3 ? "…" : "");
+      return `
+        <div style="padding:11px 12px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;background:var(--cream);display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:2px">${escapeHtml(p.patientName || "—")} <span style="font-weight:400;color:var(--navy-m);font-size:12px;margin-left:6px">${escapeHtml(p.date || "")}</span></div>
+            <div style="font-size:12px;color:var(--navy-m);line-height:1.4">${p.diagnosis ? `<strong>Dx:</strong> ${escapeHtml(p.diagnosis.substring(0, 80))}${p.diagnosis.length > 80 ? "…" : ""}` : ""}${p.diagnosis && medsLine ? " · " : ""}${medsLine ? `💊 ${escapeHtml(medsLine)}` : ""}</div>
+          </div>
+          <button onclick="reprintPrescription('${p.id}')" style="background:var(--teal);color:white;border:none;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);white-space:nowrap">🖨 View</button>
+        </div>`;
+    }).join("");
+  }
+
+  // Live search across patient name, phone, diagnosis, medicine names
+  window.searchPrescriptionHistory = function () {
+    const q = (document.getElementById("rxHistorySearch")?.value || "").trim().toLowerCase();
+    const all = window._myPrescriptions || [];
+    if (!q) { renderPrescriptionHistory(all); return; }
+    const filtered = all.filter(p => {
+      if ((p.patientName || "").toLowerCase().includes(q)) return true;
+      if ((p.patientPhone || "").includes(q)) return true;
+      if ((p.diagnosis || "").toLowerCase().includes(q)) return true;
+      if ((p.medicines || []).some(m => (m.name || "").toLowerCase().includes(q))) return true;
+      if ((p.notes || "").toLowerCase().includes(q)) return true;
+      return false;
+    });
+    renderPrescriptionHistory(filtered);
+  };
+
+  /* ─── PRIVATE NOTES (per-doctor journal, auto-saved with debounce) ─── */
+
+  let _notesSaveTimer = null;
+  let _notesLoaded = false;
+  let _notesLastSavedContent = null;
+
+  window.loadMyNotes = async function () {
+    const me = window._currentDoctor || {};
+    if (!me.id) return;
+    const txt = document.getElementById("myNotesTextarea");
+    const status = document.getElementById("notesSaveStatus");
+    if (!txt) return;
+
+    if (_notesLoaded) { _updateNotesCharCount(); return; } // already loaded once this session
+
+    try {
+      const { doc, getDoc } = window._fs;
+      const snap = await getDoc(doc(db, "doctorNotes", me.id));
+      const content = snap.exists() ? (snap.data().content || "") : "";
+      txt.value = content;
+      _notesLastSavedContent = content;
+      _notesLoaded = true;
+      if (status) status.textContent = content ? "✓ Loaded" : "Start typing…";
+      _updateNotesCharCount();
+    } catch (err) {
+      console.warn("Notes load failed:", err);
+      if (status) { status.textContent = "Could not load"; status.style.color = "#991B1B"; }
+    }
+  };
+
+  function _updateNotesCharCount() {
+    const txt = document.getElementById("myNotesTextarea");
+    const cnt = document.getElementById("notesCharCount");
+    if (txt && cnt) cnt.textContent = `${txt.value.length} character${txt.value.length === 1 ? "" : "s"}`;
+  }
+
+  // Triggered on every keystroke — debounces save by 1 second
+  window.onNotesChange = function () {
+    _updateNotesCharCount();
+    const status = document.getElementById("notesSaveStatus");
+    if (status) { status.textContent = "Saving…"; status.style.color = "var(--navy-m)"; }
+
+    if (_notesSaveTimer) clearTimeout(_notesSaveTimer);
+    _notesSaveTimer = setTimeout(_doSaveNotes, 1000);
+  };
+
+  async function _doSaveNotes() {
+    const me = window._currentDoctor || {};
+    if (!me.id) return;
+    const txt = document.getElementById("myNotesTextarea");
+    const status = document.getElementById("notesSaveStatus");
+    if (!txt) return;
+    const content = txt.value;
+
+    // Skip save if nothing changed since last save
+    if (content === _notesLastSavedContent) {
+      if (status) { status.textContent = "✓ Saved"; status.style.color = "var(--teal)"; }
+      return;
+    }
+
+    if (content.length > 100000) {
+      if (status) { status.textContent = "⚠️ Too long (100k char max)"; status.style.color = "#991B1B"; }
+      return;
+    }
+
+    try {
+      const { doc, setDoc, serverTimestamp } = window._fs;
+      await setDoc(doc(db, "doctorNotes", me.id), {
+        content: content,
+        doctorEmail: (window._auth?.auth?.currentUser?.email) || me.email || "",
+        updatedAt: serverTimestamp()
+      });
+      _notesLastSavedContent = content;
+      if (status) { status.textContent = "✓ Saved " + new Date().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }); status.style.color = "var(--teal)"; }
+    } catch (err) {
+      console.error("Notes save failed:", err);
+      if (status) { status.textContent = "❌ Save failed — check rules"; status.style.color = "#991B1B"; }
+    }
+  }
+
   /* ─── DOCTOR PROFILE PHOTO UPLOAD ─── */
   // Resizes a File to a 400x400 JPEG dataURL under ~150KB for Firestore storage
   function _resizeImageToDataURL(file, maxDim) {
@@ -2707,7 +2860,6 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
   }
   window._applyDoctorPhotoToSidebar = _applyDoctorPhotoToSidebar;
 
-  /* ─── DOCTOR ACCOUNT SELF-DELETE ─── */
   // Opens the confirmation modal, populating with the doctor's stats
   window.openDeleteAccountModal = function () {
     const me = window._currentDoctor || {};
@@ -3257,6 +3409,8 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
       const { collection, addDoc, serverTimestamp } = window._fs;
       const ref = await addDoc(collection(db, "prescriptions"), { ...data, createdAt: serverTimestamp() });
       _showRxStatus('✅ Prescription saved! You can find it in the patient\'s history.');
+      // Invalidate cached prescription list so the history search picks up the new one
+      window._myPrescriptions = null;
       return { id: ref.id, ...data };
     } catch (err) {
       console.error('Prescription save failed:', err);
