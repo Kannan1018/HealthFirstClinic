@@ -6,7 +6,7 @@
 <title>Admin Panel — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=23">
 <style>
   .admin-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px 20px; }
   .admin-form .field-full { grid-column: 1 / -1; }
@@ -44,10 +44,15 @@
 <div id="authGate" class="auth-gate" data-require="admin">
   <div class="auth-card">
     <div id="authLoading">
-      <div style="text-align:center;padding:40px 0">
-        <div style="font-size:40px;margin-bottom:14px">🏥</div>
-        <div style="color:var(--navy-m);font-size:14px">Checking access...</div>
+      <div style="text-align:center;padding:50px 20px">
+        <div style="display:inline-flex;align-items:center;gap:10px;font-family:var(--ff-d);font-size:26px;font-weight:800;color:var(--teal);margin-bottom:24px">
+          <span style="font-size:32px">🏥</span>
+          <span>HealthFirst</span>
+        </div>
+        <div class="auth-spinner" style="width:36px;height:36px;border:3px solid var(--teal-l);border-top-color:var(--teal);border-radius:50%;margin:0 auto 14px;animation:auth-spin .8s linear infinite"></div>
+        <div style="color:var(--navy-m);font-size:13px;font-weight:500">Loading admin panel…</div>
       </div>
+      <style>@keyframes auth-spin { to { transform: rotate(360deg); } }</style>
     </div>
     <div id="authLogin" style="display:none">
       <div class="auth-logo"><span>🏥</span><span>HealthFirst</span></div>
