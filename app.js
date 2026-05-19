@@ -1602,7 +1602,12 @@ if (document.getElementById("queue-upcoming")) {
 
     // Update sidebar + greeting
     const setText = (sel, val) => { const el = document.querySelector(sel); if (el) el.textContent = val; };
-    setText(".sb-avatar", me.avatar || (isAdmin ? "🛡️" : "👨‍⚕️"));
+    // Only overwrite the avatar with emoji if the doctor has NOT uploaded a profile photo
+    if (me.photoUrl && typeof window._applyDoctorPhotoToSidebar === "function") {
+      window._applyDoctorPhotoToSidebar(me.photoUrl);
+    } else {
+      setText(".sb-avatar", me.avatar || (isAdmin ? "🛡️" : "👨‍⚕️"));
+    }
     setText(".sb-name", me.name || "Doctor");
     setText(".sb-spec", me.specialty || (isAdmin ? "Admin view — all doctors" : ""));
 
