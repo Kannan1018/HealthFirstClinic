@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -387,7 +387,10 @@
       <div class="panel">
         <div class="panel-head">
           <div class="panel-title">👥 Patient Records</div>
-          <input class="form-input" type="text" placeholder="Search patients..." style="width:220px;margin:0;padding:7px 12px;font-size:13px" id="patientSearchBox" oninput="searchPatientRecords(this.value)">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="form-input" type="text" placeholder="Search patients..." style="width:220px;margin:0;padding:7px 12px;font-size:13px" id="patientSearchBox" oninput="searchPatientRecords(this.value)">
+            <button onclick="exportPatientsCSV()" style="padding:6px 12px;background:var(--teal);color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff)" title="Export full patient list to Excel">📊 Excel</button>
+          </div>
         </div>
         <div id="patientList">
           <div style="padding:32px 24px;text-align:center;color:var(--navy-m);font-size:14px">
@@ -410,7 +413,13 @@
         <div class="kpi-card"><div class="kpi-label">Total Patients</div><div class="kpi-val" id="earnPatients">0</div><div class="kpi-delta" style="color:var(--navy-m)">All-time</div></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">💰 Recent Earnings Breakdown</div></div>
+        <div class="panel-head">
+          <div class="panel-title">💰 Recent Earnings Breakdown</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="exportEarningsCSV()" style="padding:6px 12px;background:var(--teal);color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff)" title="Open in Excel / Google Sheets">📊 Excel</button>
+            <button onclick="exportEarningsPDF()" style="padding:6px 12px;background:var(--navy);color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff)" title="Printable PDF report">📄 PDF</button>
+          </div>
+        </div>
         <div style="padding:20px;font-size:13px;color:var(--navy-m);text-align:center" id="earningsBreakdown">
           Detailed breakdown will appear here once you have completed visits.
         </div>
@@ -485,7 +494,7 @@
   </div>
 </div>
 
-<script src="app.js?v=43"></script>
+<script src="app.js?v=44"></script>
 <script>
   // Set today's date
   const d = new Date();
