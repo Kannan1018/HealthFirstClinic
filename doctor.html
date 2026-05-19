@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -66,7 +66,7 @@
     </a>
     <ul class="nav-links">
       <li><a href="doctor.html" style="color:var(--teal)">My Dashboard</a></li>
-      <li><a href="admin.html">Admin Panel</a></li>
+      <li id="navAdminLink" style="display:none"><a href="admin.html">Admin Panel</a></li>
       <li><a href="index.html">Public Site</a></li>
     </ul>
     <div class="nav-actions">
@@ -75,7 +75,7 @@
   </div>
   <div class="mobile-menu" id="mobileMenu">
     <a href="doctor.html">My Dashboard</a>
-    <a href="admin.html">Admin Panel</a>
+    <a href="admin.html" id="mobileAdminLink" style="display:none">Admin Panel</a>
     <a href="index.html">Public Site</a>
   </div>
 </nav>
@@ -101,7 +101,7 @@
       <button class="sb-link" onclick="showSection('patients',this)"><span class="sb-link-icon">👥</span> Patient Records</button>
       <button class="sb-link" onclick="showSection('earnings',this)"><span class="sb-link-icon">💰</span> Earnings</button>
       <a href="index.html" class="sb-link" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px"><span class="sb-link-icon">🏥</span> Public Site</a>
-      <a href="admin.html" class="sb-link"><span class="sb-link-icon">📊</span> Admin Panel</a>
+      <a href="admin.html" class="sb-link" id="sidebarAdminLink" style="display:none"><span class="sb-link-icon">📊</span> Admin Panel</a>
       <button class="sb-link signout-link" onclick="doAdminLogout()"><span class="sb-link-icon">🚪</span> Sign Out</button>
     </nav>
   </aside>
@@ -187,87 +187,24 @@
             </div>
 
             <div id="queue-upcoming">
-              <div class="appt-item" id="appt-1">
-                <div class="ai-token">1</div>
-                <div class="ai-info">
-                  <div class="ai-name">Anita Gupta · Female, 34</div>
-                  <div class="ai-detail">11:00 AM · Fever & headache · Token #001</div>
-                </div>
-                <div class="ai-actions">
-                  <button class="ai-btn done" onclick="markDone('appt-1')">✓ Done</button>
-                  <button class="ai-btn cancel" onclick="cancelAppt('appt-1')">✗ Cancel</button>
-                </div>
-              </div>
-              <div class="appt-item" id="appt-2">
-                <div class="ai-token">2</div>
-                <div class="ai-info">
-                  <div class="ai-name">Vikash Sharma · Male, 52</div>
-                  <div class="ai-detail">11:30 AM · Blood pressure checkup · Token #002</div>
-                </div>
-                <div class="ai-actions">
-                  <button class="ai-btn done" onclick="markDone('appt-2')">✓ Done</button>
-                  <button class="ai-btn cancel" onclick="cancelAppt('appt-2')">✗ Cancel</button>
-                </div>
-              </div>
-              <div class="appt-item" id="appt-3">
-                <div class="ai-token">3</div>
-                <div class="ai-info">
-                  <div class="ai-name">Priya Joshi · Female, 28</div>
-                  <div class="ai-detail">12:00 PM · Skin allergy · Token #003</div>
-                </div>
-                <div class="ai-actions">
-                  <button class="ai-btn done" onclick="markDone('appt-3')">✓ Done</button>
-                  <button class="ai-btn cancel" onclick="cancelAppt('appt-3')">✗ Cancel</button>
-                </div>
-              </div>
-              <div class="appt-item" id="appt-4">
-                <div class="ai-token">4</div>
-                <div class="ai-info">
-                  <div class="ai-name">Ramesh Patel · Male, 61</div>
-                  <div class="ai-detail">2:00 PM · Diabetes follow-up · Token #004</div>
-                </div>
-                <div class="ai-actions">
-                  <button class="ai-btn done" onclick="markDone('appt-4')">✓ Done</button>
-                  <button class="ai-btn cancel" onclick="cancelAppt('appt-4')">✗ Cancel</button>
-                </div>
-              </div>
-              <div class="appt-item" id="appt-5">
-                <div class="ai-token">5</div>
-                <div class="ai-info">
-                  <div class="ai-name">Sunita Yadav · Female, 45</div>
-                  <div class="ai-detail">2:30 PM · Thyroid checkup · Token #005</div>
-                </div>
-                <div class="ai-actions">
-                  <button class="ai-btn done" onclick="markDone('appt-5')">✓ Done</button>
-                  <button class="ai-btn cancel" onclick="cancelAppt('appt-5')">✗ Cancel</button>
-                </div>
-              </div>
-              <div class="appt-item" id="appt-6">
-                <div class="ai-token">6</div>
-                <div class="ai-info">
-                  <div class="ai-name">Mohan Gupta · Male, 38</div>
-                  <div class="ai-detail">3:00 PM · General checkup · Token #006</div>
-                </div>
-                <div class="ai-actions">
-                  <button class="ai-btn done" onclick="markDone('appt-6')">✓ Done</button>
-                  <button class="ai-btn cancel" onclick="cancelAppt('appt-6')">✗ Cancel</button>
-                </div>
+              <div style="padding:32px;text-align:center;color:var(--navy-m);font-size:14px">
+                <div style="font-size:36px;margin-bottom:8px">📋</div>
+                Loading today's appointments...
               </div>
             </div>
 
             <div id="queue-done" style="display:none">
-              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Suresh Agarwal · Male, 45</div><div class="ai-detail">9:00 AM · Cold & cough · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
-              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Meena Devi · Female, 38</div><div class="ai-detail">9:30 AM · General checkup · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
-              <div class="appt-item"><div class="ai-token" style="background:var(--red-l);color:var(--red)">✗</div><div class="ai-info"><div class="ai-name">Arjun Meena · Male, 22</div><div class="ai-detail">10:00 AM · No-show</div></div><span class="status-badge sb-cancelled">No-Show</span></div>
-              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Kavita Sharma · Female, 55</div><div class="ai-detail">10:30 AM · Hypertension · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
-              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Rohan Verma · Male, 27</div><div class="ai-detail">11:00 AM · Migraine · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
-              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Sita Bai · Female, 48</div><div class="ai-detail">11:30 AM · Back pain · Referred to Ortho</div></div><span class="status-badge sb-done">Done</span></div>
-              <div class="appt-item"><div class="ai-token" style="background:var(--green-l);color:var(--green)">✓</div><div class="ai-info"><div class="ai-name">Dinesh Kumar · Male, 33</div><div class="ai-detail">12:00 PM · Acidity · Prescription issued</div></div><span class="status-badge sb-done">Done</span></div>
-              <div class="appt-item"><div class="ai-token" style="background:var(--red-l);color:var(--red)">✗</div><div class="ai-info"><div class="ai-name">Pooja Rawat · Female, 29</div><div class="ai-detail">12:30 PM · Cancelled by patient</div></div><span class="status-badge sb-cancelled">Cancelled</span></div>
+              <div style="padding:32px;text-align:center;color:var(--navy-m);font-size:14px">
+                <div style="font-size:36px;margin-bottom:8px">✓</div>
+                No completed appointments yet today.
+              </div>
             </div>
 
             <div id="queue-all" style="display:none">
-              <div style="padding:16px 20px;font-size:13px;color:var(--navy-m)">Showing all 14 appointments for today.</div>
+              <div style="padding:32px;text-align:center;color:var(--navy-m);font-size:14px">
+                <div style="font-size:36px;margin-bottom:8px">📅</div>
+                Loading appointments...
+              </div>
             </div>
           </div>
         </div>
@@ -496,7 +433,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=39"></script>
+<script src="app.js?v=41"></script>
 <script>
   // Set today's date
   const d = new Date();
