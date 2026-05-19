@@ -6,7 +6,7 @@
 <title>Admin Panel — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 <style>
   .admin-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px 20px; }
   .admin-form .field-full { grid-column: 1 / -1; }
@@ -117,25 +117,36 @@
 
   <!-- BIG KPIs -->
   <div class="big-kpi-row">
-    <div class="big-kpi accent">
+    <div class="big-kpi accent" style="cursor:pointer" onclick="document.getElementById('docApplications').scrollIntoView({behavior:'smooth'})" title="Click to jump to applications">
+      <div class="bk-val" id="adminPendingApps">...</div>
+      <div class="bk-label">Pending applications</div>
+      <div class="bk-delta" id="adminPendingDelta">Tap to review</div>
+    </div>
+    <div class="big-kpi">
+      <div class="bk-val" id="adminTodayBookings">...</div>
+      <div class="bk-label">Today's bookings</div>
+      <div class="bk-delta up" id="adminTodayDelta">Live data</div>
+    </div>
+    <div class="big-kpi">
       <div class="bk-val" id="adminRevenue">Loading...</div>
       <div class="bk-label">Revenue this month</div>
       <div class="bk-delta">From online payments</div>
     </div>
     <div class="big-kpi">
-      <div class="bk-val" id="adminTotalBookings">...</div>
-      <div class="bk-label">Appointments this month</div>
-      <div class="bk-delta up">Live data</div>
+      <div class="bk-val" id="adminCancelsWeek">...</div>
+      <div class="bk-label">Cancellations this week</div>
+      <div class="bk-delta" id="adminCancelDelta">Last 7 days</div>
     </div>
-    <div class="big-kpi">
-      <div class="bk-val" id="adminDocCount">...</div>
-      <div class="bk-label">Doctors on platform</div>
-      <div class="bk-delta up">Active listings</div>
+  </div>
+
+  <!-- TOP EARNERS WIDGET -->
+  <div class="panel" style="margin-bottom:24px">
+    <div class="panel-head">
+      <div class="panel-title">🏆 Top Earning Doctors — This Month</div>
+      <span style="font-size:12px;color:var(--navy-m)" id="topEarnersSub">Based on completed visits</span>
     </div>
-    <div class="big-kpi">
-      <div class="bk-val" id="adminAvgRating">...</div>
-      <div class="bk-label">Avg patient rating</div>
-      <div class="bk-delta up">From verified reviews</div>
+    <div id="topEarnersList" style="padding:14px 20px">
+      <div style="text-align:center;color:var(--navy-m);font-size:13px;padding:10px">Loading...</div>
     </div>
   </div>
 
@@ -270,7 +281,10 @@
       <div class="panel">
         <div class="panel-head">
           <div class="panel-title">Recent Bookings & Patient Search</div>
-          <span style="font-size:12px;color:var(--navy-m)" id="bookingCount">Live feed</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:12px;color:var(--navy-m)" id="bookingCount">Live feed</span>
+            <button onclick="exportBookingsCSV()" style="padding:5px 12px;background:var(--teal);color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff)">📥 Export CSV</button>
+          </div>
         </div>
         <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
           <input type="text" id="patientSearchInput" oninput="applyBookingFilters()" placeholder="🔍 Search by phone, name, or token..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
@@ -342,7 +356,7 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=39"></script>
+<script src="app.js?v=40"></script>
 <script>
   const d = new Date();
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
