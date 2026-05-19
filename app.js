@@ -408,11 +408,9 @@ async function handleAuthStateChange(user) {
     showIfAdmin("sidebarAdminLink", "flex");   // sidebar <a>
 
     if (isAdminUser) {
-      window._currentDoctor = { email: user.email, name: "Admin", specialty: "All Doctors", avatar: "🛡️" };
-      const emailEl = document.getElementById("authedEmail");
-      if (emailEl) emailEl.textContent = user.email + " (admin)";
-      showContent();
-      document.dispatchEvent(new Event("doctor-ready"));
+      // Admin shouldn't be viewing the doctor dashboard. Redirect them to their own panel.
+      console.log("[auth] Admin user landed on doctor.html — redirecting to admin.html");
+      window.location.replace("admin.html");
       return;
     }
     const docMatch = await loadDoctorByEmail(userEmail);
