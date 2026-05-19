@@ -396,7 +396,18 @@ async function handleAuthStateChange(user) {
   if (requireWhat === "doctor") {
     const userEmail = normEmail(user.email);
     const adminEmail = normEmail(ADMIN_EMAIL);
-    if (userEmail === adminEmail) {
+    const isAdminUser = userEmail === adminEmail;
+
+    // Show / hide Admin Panel links based on role
+    const showIfAdmin = (id, displayValue) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = isAdminUser ? displayValue : "none";
+    };
+    showIfAdmin("navAdminLink", "");           // <li> in top nav (default inline list-item)
+    showIfAdmin("mobileAdminLink", "block");   // mobile menu <a>
+    showIfAdmin("sidebarAdminLink", "flex");   // sidebar <a>
+
+    if (isAdminUser) {
       window._currentDoctor = { email: user.email, name: "Admin", specialty: "All Doctors", avatar: "🛡️" };
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email + " (admin)";
@@ -1619,10 +1630,12 @@ if (document.getElementById("queue-upcoming")) {
     const container = document.getElementById("queue-upcoming");
     if (!container) return;
     const confirmed = todayBookings.filter(b => b.status === "confirmed");
+    const done = todayBookings.filter(b => b.status === "done");
+    const cancelled = todayBookings.filter(b => b.status === "cancelled" || b.status === "no_show");
+
     if (confirmed.length === 0) {
       container.innerHTML = `<div style="padding:32px 24px;text-align:center;color:var(--navy-m);font-size:14px"><div style="font-size:40px;margin-bottom:10px">📭</div>No appointments scheduled for today.</div>`;
-      return;
-    }
+    } else {
     container.innerHTML = confirmed.map((b, i) => {
       const phoneAttr = (b.phone || "").replace(/\D/g, "");
       return `
@@ -1640,6 +1653,65 @@ if (document.getElementById("queue-upcoming")) {
         </div>
       </div>`;
     }).join("");
+    }
+
+    // ─── Render the "Completed" tab with real data ───
+    const doneContainer = document.getElementById("queue-done");
+    if (doneContainer) {
+      const doneAndCancelled = [...done, ...cancelled].sort((a, b) => (a.slot || "").localeCompare(b.slot || ""));
+      if (doneAndCancelled.length === 0) {
+        doneContainer.innerHTML = `<div style="padding:32px;text-align:center;color:var(--navy-m);font-size:14px"><div style="font-size:36px;margin-bottom:8px">✓</div>No completed appointments yet today.</div>`;
+      } else {
+        doneContainer.innerHTML = doneAndCancelled.map(b => {
+          const isDone = b.status === "done";
+          const isCancelled = b.status === "cancelled" || b.status === "no_show";
+          const tokenStyle = isDone ? "background:var(--green-l);color:var(--green)" : "background:var(--red-l);color:var(--red)";
+          const tokenIcon = isDone ? "✓" : "✗";
+          const badgeClass = isDone ? "sb-done" : "sb-cancelled";
+          const badgeText = isDone ? "Done" : (b.status === "no_show" ? "No-Show" : "Cancelled");
+          return `
+            <div class="appt-item">
+              <div class="ai-token" style="${tokenStyle}">${tokenIcon}</div>
+              <div class="ai-info">
+                <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.gender || "")}, ${escapeHtml(b.age || "")}</div>
+                <div class="ai-detail">${escapeHtml(b.slot || "—")} · ${escapeHtml(b.reason || "—")} · Token ${escapeHtml(b.token || "—")}</div>
+              </div>
+              <span class="status-badge ${badgeClass}">${badgeText}</span>
+            </div>`;
+        }).join("");
+      }
+    }
+
+    // ─── Render the "All" tab: everything chronologically ───
+    const allContainer = document.getElementById("queue-all");
+    if (allContainer) {
+      const sortedAll = [...todayBookings].sort((a, b) => (a.slot || "").localeCompare(b.slot || ""));
+      if (sortedAll.length === 0) {
+        allContainer.innerHTML = `<div style="padding:32px;text-align:center;color:var(--navy-m);font-size:14px"><div style="font-size:36px;margin-bottom:8px">📅</div>No appointments today.</div>`;
+      } else {
+        allContainer.innerHTML = `<div style="padding:14px 20px;font-size:13px;color:var(--navy-m);border-bottom:1px solid var(--border)">Showing all ${sortedAll.length} appointment${sortedAll.length === 1 ? "" : "s"} for today.</div>` + sortedAll.map((b, i) => {
+          const status = b.status || "confirmed";
+          const tokenStyle = status === "done" ? "background:var(--green-l);color:var(--green)" :
+                             (status === "cancelled" || status === "no_show") ? "background:var(--red-l);color:var(--red)" :
+                             "";
+          const tokenIcon = status === "done" ? "✓" : (status === "cancelled" || status === "no_show") ? "✗" : (i + 1);
+          const badgeClass = status === "done" ? "sb-done" : (status === "cancelled" || status === "no_show") ? "sb-cancelled" : "sb-waiting";
+          const badgeText = status === "done" ? "Done" : status === "no_show" ? "No-Show" : status === "cancelled" ? "Cancelled" : "Confirmed";
+          return `
+            <div class="appt-item">
+              <div class="ai-token" style="${tokenStyle}">${tokenIcon}</div>
+              <div class="ai-info">
+                <div class="ai-name">${escapeHtml(b.patientName)} · ${escapeHtml(b.gender || "")}, ${escapeHtml(b.age || "")}</div>
+                <div class="ai-detail">${escapeHtml(b.slot || "—")} · ${escapeHtml(b.reason || "—")} · Token ${escapeHtml(b.token || "—")}</div>
+              </div>
+              <span class="status-badge ${badgeClass}">${badgeText}</span>
+            </div>`;
+        }).join("");
+      }
+    }
+
+    // Skip the rest of upcoming-tab setup if there are no confirmed bookings
+    if (confirmed.length === 0) return;
 
     // Attach click listener DIRECTLY to each button (most reliable)
     container.querySelectorAll(".queue-done-btn").forEach(btn => {
