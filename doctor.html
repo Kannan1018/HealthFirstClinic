@@ -6,7 +6,7 @@
 <title>Doctor Dashboard — HealthFirst</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👨‍⚕️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 <style>
   /* ─── AUTH GATE ─── */
   .auth-gate { position: fixed; inset: 0; z-index: 99999; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dd) 100%); display: flex; align-items: center; justify-content: center; padding: 20px; font-family: var(--ff); }
@@ -84,7 +84,10 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sb-doc">
-      <div class="sb-avatar">👨‍⚕️</div>
+      <div class="sb-avatar" id="sbAvatar" onclick="openPhotoUpload()" title="Click to upload your photo" style="cursor:pointer;position:relative;overflow:hidden">👨‍⚕️
+        <div class="photo-edit-overlay" style="position:absolute;inset:0;background:rgba(0,0,0,0.55);color:white;display:none;align-items:center;justify-content:center;font-size:11px;font-weight:600;text-align:center;line-height:1.3">📷<br>Change<br>photo</div>
+      </div>
+      <input type="file" id="sbAvatarInput" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handlePhotoSelected(event)">
       <div class="sb-name">Doctor</div>
       <div class="sb-spec">—</div>
       <div class="sb-avail">
@@ -494,7 +497,7 @@
   </div>
 </div>
 
-<script src="app.js?v=44"></script>
+<script src="app.js?v=45"></script>
 <script>
   // Set today's date
   const d = new Date();
@@ -507,6 +510,27 @@
   if(dateEl) dateEl.value = d.toISOString().split('T')[0];
 
   // Section switching
+  // Avatar photo upload — opens file picker
+  function openPhotoUpload() {
+    const input = document.getElementById('sbAvatarInput');
+    if (input) input.click();
+  }
+  function handlePhotoSelected(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (file && window.uploadDoctorPhoto) window.uploadDoctorPhoto(file);
+    ev.target.value = ''; // reset so user can re-pick same file
+  }
+
+  // Show "Change photo" overlay on hover for desktop
+  document.addEventListener('DOMContentLoaded', function () {
+    const av = document.getElementById('sbAvatar');
+    if (!av) return;
+    const overlay = av.querySelector('.photo-edit-overlay');
+    if (!overlay) return;
+    av.addEventListener('mouseenter', () => { overlay.style.display = 'flex'; });
+    av.addEventListener('mouseleave', () => { overlay.style.display = 'none'; });
+  });
+
   function showSection(id, btn) {
     ['today','prescription','schedule','patients','earnings'].forEach(s => {
       document.getElementById('section-'+s).style.display = 'none';
