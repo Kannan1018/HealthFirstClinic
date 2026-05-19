@@ -2439,6 +2439,179 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
     w.document.open(); w.document.write(html); w.document.close();
   };
 
+  /* ─── DOCTOR EXPORTS: Earnings (CSV / PDF) and Patient Records (CSV) ─── */
+
+  function _csvEsc(v) {
+    if (v == null) return "";
+    return '"' + String(v).replace(/"/g, '""') + '"';
+  }
+
+  function _downloadCSV(csv, filename) {
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  window.exportEarningsCSV = function () {
+    const me = window._currentDoctor || {};
+    const all = window._myAllBookings || [];
+    const completed = all.filter(b => b.status === "done").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    if (completed.length === 0) { alert("No completed visits to export yet."); return; }
+
+    const headers = ["Date", "Time", "Token", "Patient Name", "Phone", "Age", "Gender", "Reason", "Fee (₹)", "Payment Method", "Booking ID"];
+    const lines = [headers.map(_csvEsc).join(",")];
+    let total = 0;
+    completed.forEach(b => {
+      const fee = parseInt(b.fee) || 0;
+      total += fee;
+      lines.push([
+        b.date || "", b.slot || "", b.token || "", b.patientName || "", b.phone || "",
+        b.age || "", b.gender || "", b.reason || "", fee,
+        b.paymentMethod === "paid_online" ? "Paid Online" : b.paymentMethod === "cash" ? "Cash / Walk-in" : "Pay at Clinic",
+        b.id || ""
+      ].map(_csvEsc).join(","));
+    });
+    lines.push(["", "", "", "", "", "", "", "TOTAL", total, "", ""].map(_csvEsc).join(","));
+
+    const stamp = new Date().toISOString().split("T")[0];
+    const safeName = (me.name || "doctor").toLowerCase().replace(/[^a-z0-9]/g, "-");
+    _downloadCSV(lines.join("\r\n"), `earnings-${safeName}-${stamp}.csv`);
+  };
+
+  window.exportEarningsPDF = function () {
+    const me = window._currentDoctor || {};
+    const all = window._myAllBookings || [];
+    const completed = all.filter(b => b.status === "done").sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    if (completed.length === 0) { alert("No completed visits to export yet."); return; }
+
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(now.getDate() - 7);
+    const totalAll = completed.reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const monthTotal = completed.filter(b => { if (!b.date) return false; const d = new Date(b.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const weekTotal = completed.filter(b => { if (!b.date) return false; return new Date(b.date) >= sevenDaysAgo; }).reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+    const todayTotal = completed.filter(b => b.date === todayStr).reduce((s, b) => s + (parseInt(b.fee) || 0), 0);
+
+    const rowsHtml = completed.map(b => {
+      const fee = parseInt(b.fee) || 0;
+      return `<tr>
+        <td>${escapeHtml(b.date || "—")}</td>
+        <td>${escapeHtml(b.slot || "—")}</td>
+        <td>${escapeHtml(b.token || "—")}</td>
+        <td>${escapeHtml(b.patientName || "—")}</td>
+        <td>${escapeHtml(b.phone || "—")}</td>
+        <td>${escapeHtml(b.paymentMethod === "paid_online" ? "Online" : b.paymentMethod === "cash" ? "Cash" : "Clinic")}</td>
+        <td style="text-align:right;font-weight:700;color:#3D5A4C">₹${fee.toLocaleString("en-IN")}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Earnings Report — Dr. ${escapeHtml(me.name || "")}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font-family: Georgia, serif; color: #1F2F26; padding: 20px; background: white; margin: 0; }
+  .header { border-bottom: 3px solid #3D5A4C; padding-bottom: 14px; margin-bottom: 22px; }
+  .clinic-name { font-size: 26px; font-weight: 800; color: #3D5A4C; }
+  .clinic-sub { font-size: 13px; color: #888; margin-top: 2px; }
+  .meta { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; font-size: 13px; flex-wrap: wrap; gap: 10px; }
+  .meta strong { color: #3D5A4C; }
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 22px 0; }
+  .summary-card { background: #F5F1EA; border-radius: 8px; padding: 14px; text-align: center; border: 1px solid #DDE5DB; }
+  .summary-card .lbl { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: 700; }
+  .summary-card .val { font-size: 20px; font-weight: 800; color: #3D5A4C; }
+  h2 { font-size: 16px; color: #3D5A4C; margin: 18px 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: #3D5A4C; color: white; text-align: left; padding: 9px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  th:last-child { text-align: right; }
+  td { padding: 9px 10px; border-bottom: 1px solid #DDE5DB; }
+  tr:nth-child(even) td { background: #FAF6EF; }
+  .total-row { background: #EEF1ED !important; font-weight: 700; }
+  .total-row td { border-top: 2px solid #3D5A4C; padding: 12px 10px; font-size: 13px; }
+  .footer { margin-top: 28px; padding-top: 14px; border-top: 1px solid #DDE5DB; font-size: 11px; color: #888; display: flex; justify-content: space-between; }
+  @media print { body { padding: 0; } .print-toolbar { display: none; } }
+  .print-toolbar { position: fixed; top: 12px; right: 12px; }
+  .print-toolbar button { padding: 8px 16px; background: #3D5A4C; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+</style></head><body>
+<div class="print-toolbar"><button onclick="window.print()">🖨 Print / Save as PDF</button></div>
+<div class="header">
+  <div class="clinic-name">HealthFirst — Earnings Report</div>
+  <div class="clinic-sub">Quality healthcare, when you need it</div>
+  <div class="meta">
+    <div><strong>Dr. ${escapeHtml(me.name || "—")}</strong>${me.specialty ? " · " + escapeHtml(me.specialty) : ""}${me.qualification ? " · " + escapeHtml(me.qualification) : ""}</div>
+    <div><strong>Generated:</strong> ${new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "long", year: "numeric" })}</div>
+  </div>
+</div>
+<div class="summary-grid">
+  <div class="summary-card"><div class="lbl">All-Time</div><div class="val">₹${totalAll.toLocaleString("en-IN")}</div></div>
+  <div class="summary-card"><div class="lbl">This Month</div><div class="val">₹${monthTotal.toLocaleString("en-IN")}</div></div>
+  <div class="summary-card"><div class="lbl">This Week</div><div class="val">₹${weekTotal.toLocaleString("en-IN")}</div></div>
+  <div class="summary-card"><div class="lbl">Today</div><div class="val">₹${todayTotal.toLocaleString("en-IN")}</div></div>
+</div>
+<h2>Completed Visits (${completed.length})</h2>
+<table>
+  <thead><tr><th>Date</th><th>Time</th><th>Token</th><th>Patient</th><th>Phone</th><th>Payment</th><th>Fee</th></tr></thead>
+  <tbody>${rowsHtml}<tr class="total-row"><td colspan="6">TOTAL</td><td style="text-align:right">₹${totalAll.toLocaleString("en-IN")}</td></tr></tbody>
+</table>
+<div class="footer">
+  <div>Generated by HealthFirst on ${new Date().toLocaleString("en-IN")}</div>
+  <div>End of Report</div>
+</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script>
+</body></html>`;
+
+    const w = window.open("", "_blank", "width=900,height=1000");
+    if (!w) { alert("⚠️ Pop-up blocked. Allow pop-ups and try again."); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  };
+
+  window.exportPatientsCSV = function () {
+    const me = window._currentDoctor || {};
+    const all = window._myAllBookings || [];
+    if (all.length === 0) { alert("No patient records to export yet."); return; }
+
+    const patientsByPhone = {};
+    all.forEach(b => {
+      const phone = (b.phone || "").replace(/\D/g, "");
+      if (!phone) return;
+      if (!patientsByPhone[phone]) {
+        patientsByPhone[phone] = {
+          name: b.patientName || "—", phone: phone,
+          age: b.age || "", gender: b.gender || "",
+          visits: [], totalPaid: 0,
+          firstVisit: b.date || "", lastVisit: b.date || ""
+        };
+      }
+      const p = patientsByPhone[phone];
+      p.visits.push(b);
+      if (b.status === "done") p.totalPaid += parseInt(b.fee) || 0;
+      if (b.date) {
+        if (!p.firstVisit || b.date < p.firstVisit) p.firstVisit = b.date;
+        if (!p.lastVisit || b.date > p.lastVisit) p.lastVisit = b.date;
+      }
+    });
+
+    const patients = Object.values(patientsByPhone).sort((a, b) => (b.lastVisit || "").localeCompare(a.lastVisit || ""));
+
+    const headers = ["Patient Name", "Phone", "Age", "Gender", "First Visit", "Last Visit", "Total Visits", "Completed", "Cancelled", "No-Shows", "Total Paid (₹)"];
+    const lines = [headers.map(_csvEsc).join(",")];
+    patients.forEach(p => {
+      const done = p.visits.filter(v => v.status === "done").length;
+      const cancelled = p.visits.filter(v => v.status === "cancelled").length;
+      const noShows = p.visits.filter(v => v.status === "no_show").length;
+      lines.push([
+        p.name, p.phone, p.age, p.gender,
+        p.firstVisit, p.lastVisit, p.visits.length,
+        done, cancelled, noShows, p.totalPaid
+      ].map(_csvEsc).join(","));
+    });
+
+    const stamp = new Date().toISOString().split("T")[0];
+    const safeName = (me.name || "doctor").toLowerCase().replace(/[^a-z0-9]/g, "-");
+    _downloadCSV(lines.join("\r\n"), `patients-${safeName}-${stamp}.csv`);
+  };
+
   // Click outside to close
   document.addEventListener("click", function (e) {
     const modal = document.getElementById("patientHistoryModal");
