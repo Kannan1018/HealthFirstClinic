@@ -380,7 +380,7 @@ async function handleAuthStateChange(user) {
     if (userEmail === adminEmail) {
       const emailEl = document.getElementById("authedEmail");
       if (emailEl) emailEl.textContent = user.email;
-      try { localStorage.setItem('hf_admin_name', 'Admin'); } catch (e) {}
+      try { localStorage.setItem('hf_admin_name', 'Kannan'); } catch (e) {}
       showContent();
       document.dispatchEvent(new Event("admin-ready"));
     } else {
