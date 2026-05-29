@@ -3629,23 +3629,40 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
   function renderScheduleGrid() {
     const grid = document.getElementById("scheduleGrid");
     if (!grid) return;
-    const days = [
-      { num: "1", name: "Monday" },
-      { num: "2", name: "Tuesday" },
-      { num: "3", name: "Wednesday" },
-      { num: "4", name: "Thursday" },
-      { num: "5", name: "Friday" },
-      { num: "6", name: "Saturday" },
-      { num: "0", name: "Sunday" }
-    ];
     const slotLengths = [10, 15, 20, 30, 45, 60];
+    const dayNamesFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-    // Normalize legacy data → new schema if needed
-    days.forEach(d => {
-      const v = currentScheduleData.weeklyPattern[d.num];
+    // Build list of next 7 days starting from today, ordered chronologically.
+    // Each entry: { num: "0"-"6", name, date, dateLabel }
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    const sameDay = (a, b) => a.toDateString() === b.toDateString();
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const weekdayNum = d.getDay();
+      const dayMonth = d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+      const fullDate = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      let relative = "";
+      if (sameDay(d, today)) relative = "Today";
+      else if (sameDay(d, tomorrow)) relative = "Tomorrow";
+      days.push({
+        num: String(weekdayNum),
+        name: dayNamesFull[weekdayNum],
+        dayMonth: dayMonth,
+        fullDate: fullDate,
+        relative: relative,
+        date: d
+      });
+    }
+
+    // Normalize legacy data → new schema if needed (only need to do this once per weekday)
+    ["0","1","2","3","4","5","6"].forEach(n => {
+      const v = currentScheduleData.weeklyPattern[n];
       if (Array.isArray(v)) {
-        // Legacy array → convert into the new object format with sensible defaults
-        currentScheduleData.weeklyPattern[d.num] = {
+        currentScheduleData.weeklyPattern[n] = {
           isOff: v.length === 0,
           workingStart: "09:00",
           workingEnd: "13:00",
@@ -3653,9 +3670,8 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
           excludedSlots: []
         };
       } else if (!v || typeof v !== "object") {
-        currentScheduleData.weeklyPattern[d.num] = { isOff: true, workingStart: "09:00", workingEnd: "13:00", slotLength: 30, excludedSlots: [] };
+        currentScheduleData.weeklyPattern[n] = { isOff: true, workingStart: "09:00", workingEnd: "13:00", slotLength: 30, excludedSlots: [] };
       } else {
-        // Fill in any missing fields
         if (v.workingStart === undefined) v.workingStart = "09:00";
         if (v.workingEnd === undefined) v.workingEnd = "13:00";
         if (v.slotLength === undefined) v.slotLength = 30;
@@ -3664,34 +3680,16 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
       }
     });
 
-    function getUpcomingDateForWeekday(targetDayNum) {
-      const today = new Date();
-      const todayDayNum = today.getDay();
-      const targetNum = parseInt(targetDayNum);
-      const diff = (targetNum - todayDayNum + 7) % 7;
-      const upcoming = new Date(today);
-      upcoming.setDate(today.getDate() + diff);
-      return upcoming;
-    }
-
-    function formatUpcomingDate(d) {
-      const today = new Date();
-      const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
-      const sameDay = (a, b) => a.toDateString() === b.toDateString();
-      const dayMonth = d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-      if (sameDay(d, today)) return `${dayMonth} · Today`;
-      if (sameDay(d, tomorrow)) return `${dayMonth} · Tomorrow`;
-      return dayMonth;
-    }
-
     grid.innerHTML = days.map(d => {
       const day = currentScheduleData.weeklyPattern[d.num];
       const isOff = !!day.isOff;
       const activeSlots = getActiveSlotsForDay(day);
       const allGenerated = generateSlotsFromWindow(day.workingStart, day.workingEnd, day.slotLength);
       const excluded = new Set(day.excludedSlots || []);
-      const upcomingDate = getUpcomingDateForWeekday(d.num);
-      const dateLabel = formatUpcomingDate(upcomingDate);
+
+      // Check if this specific date is in blockedDates (one-time leave)
+      const dateISO = d.date.toISOString().split("T")[0];
+      const isBlockedDate = (currentScheduleData.blockedDates || []).includes(dateISO);
 
       const slotPills = allGenerated.length === 0
         ? `<div style="font-size:12px;color:var(--red);padding:8px 0">⚠️ End time must be after start time (with room for at least one slot).</div>`
@@ -3700,52 +3698,60 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
             return `<button onclick="toggleDaySlot('${d.num}','${s.replace(/'/g, "\\'")}')" style="padding:7px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--ff);transition:all .15s;white-space:nowrap;${isActive ? 'background:var(--teal);color:var(--cream);border:1.5px solid var(--teal)' : 'background:white;color:var(--navy-h);border:1.5px solid var(--border-md);text-decoration:line-through'}">${s}</button>`;
           }).join("");
 
+      // Highlight today's card with a subtle teal border
+      const todayHighlight = d.relative === "Today" ? "border:2px solid var(--teal);box-shadow:0 2px 12px rgba(61,90,76,0.08)" : "border:1px solid var(--border)";
+
       return `
-        <div style="margin-bottom:14px;background:var(--white);border-radius:var(--r-lg);padding:18px;border:1px solid var(--border);${isOff ? 'opacity:0.7' : ''}">
-          <!-- Day header -->
+        <div style="margin-bottom:14px;background:var(--white);border-radius:var(--r-lg);padding:18px;${todayHighlight};${isOff || isBlockedDate ? 'opacity:0.65' : ''}">
+          <!-- Date header (date primary, weekday secondary) -->
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-              <div style="font-family:var(--ff-d);font-size:18px;font-weight:600;color:var(--navy);letter-spacing:-0.01em">${d.name}</div>
-              <div style="font-size:12px;color:var(--navy-m);font-weight:600">📅 ${dateLabel}</div>
-              ${isOff
-                ? '<span style="font-size:11px;background:var(--red-l);color:var(--red);padding:3px 10px;border-radius:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em">Day off</span>'
-                : `<span style="font-size:11px;background:var(--teal-l);color:var(--teal-d);padding:3px 10px;border-radius:14px;font-weight:700">${activeSlots.length} slot${activeSlots.length === 1 ? '' : 's'}</span>`}
+            <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+              <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-0.01em">${d.dayMonth}</div>
+              <div style="font-size:13px;color:var(--navy-m);font-weight:600">${d.name}${d.relative ? ` · <span style="color:var(--teal);font-weight:700">${d.relative}</span>` : ''}</div>
+              ${isBlockedDate
+                ? '<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;background:#FEE2E2;color:#991B1B">🚫 Blocked date</span>'
+                : isOff
+                  ? '<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;background:#FEF3C7;color:#92400E">Day off</span>'
+                  : `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;background:var(--teal-l);color:var(--teal-d)">${activeSlots.length} slot${activeSlots.length === 1 ? "" : "s"}</span>`
+              }
             </div>
-            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--navy-m)">
-              <input type="checkbox" ${isOff ? 'checked' : ''} onchange="setDayOff('${d.num}', this.checked)" style="cursor:pointer;width:14px;height:14px;accent-color:var(--red)"> Day off
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--navy-m);cursor:pointer;font-weight:600">
+              <input type="checkbox" ${isOff ? "checked" : ""} onchange="setDayOff('${d.num}', this.checked)" style="width:16px;height:16px;accent-color:var(--teal);cursor:pointer">
+              <span>Day off</span>
             </label>
           </div>
 
-          ${!isOff ? `
-            <!-- Controls row: working hours + slot length -->
-            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:var(--r);border:1px solid var(--border)">
-              <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-size:13px;color:var(--navy-m);font-weight:600">Hours</span>
-                <input type="time" value="${day.workingStart}" onchange="setDayHours('${d.num}','start',this.value)" style="padding:6px 10px;border:1px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:13px;background:white">
-                <span style="font-size:13px;color:var(--navy-m)">to</span>
-                <input type="time" value="${day.workingEnd}" onchange="setDayHours('${d.num}','end',this.value)" style="padding:6px 10px;border:1px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:13px;background:white">
-              </div>
-              <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-size:13px;color:var(--navy-m);font-weight:600">Each visit</span>
-                <select onchange="setDaySlotLength('${d.num}', this.value)" style="padding:6px 10px;border:1px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-size:13px;background:white;cursor:pointer">
-                  ${slotLengths.map(n => `<option value="${n}" ${day.slotLength == n ? 'selected' : ''}>${n} min</option>`).join("")}
-                </select>
-              </div>
-              <div style="margin-left:auto;display:flex;gap:6px">
-                <button onclick="setAllDaySlots('${d.num}', true)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Enable all</button>
-                <button onclick="setAllDaySlots('${d.num}', false)" style="background:none;border:1px solid var(--border-md);padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--ff);color:var(--navy-s)">Disable all</button>
-              </div>
+          ${isOff ? '' : `
+          <!-- Working hours + slot length -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+            <div>
+              <label style="display:block;font-size:10px;font-weight:700;color:var(--navy-m);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">From</label>
+              <input type="time" value="${day.workingStart}" onchange="setDayHours('${d.num}','start',this.value)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
             </div>
+            <div>
+              <label style="display:block;font-size:10px;font-weight:700;color:var(--navy-m);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">To</label>
+              <input type="time" value="${day.workingEnd}" onchange="setDayHours('${d.num}','end',this.value)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
+            </div>
+            <div>
+              <label style="display:block;font-size:10px;font-weight:700;color:var(--navy-m);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">Visit length</label>
+              <select onchange="setDaySlotLength('${d.num}', this.value)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none">
+                ${slotLengths.map(m => `<option value="${m}" ${day.slotLength === m ? "selected" : ""}>${m} min</option>`).join("")}
+              </select>
+            </div>
+          </div>
 
-            <!-- Generated slot pills -->
-            <div style="display:flex;flex-wrap:wrap;gap:6px">
-              ${slotPills}
+          <!-- Generated slot pills -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${slotPills}</div>
+
+          ${allGenerated.length > 0 ? `
+            <div style="display:flex;gap:8px;font-size:11px">
+              <button onclick="setAllDaySlots('${d.num}', true)" style="padding:5px 11px;background:transparent;border:1px solid var(--teal);color:var(--teal-d);border-radius:6px;font-weight:600;cursor:pointer;font-family:var(--ff)">✓ Enable all</button>
+              <button onclick="setAllDaySlots('${d.num}', false)" style="padding:5px 11px;background:transparent;border:1px solid var(--border-md);color:var(--navy-h);border-radius:6px;font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Disable all</button>
             </div>
-            ${allGenerated.length > 0 ? `<div style="margin-top:10px;font-size:11px;color:var(--navy-h);font-style:italic">Tap any slot to enable/disable. Disabled slots won't appear to patients.</div>` : ''}
-          ` : `
-            <div style="font-size:13px;color:var(--navy-m);padding:8px 0">You're not seeing patients on this day. Uncheck "Day off" above to enable bookings.</div>
+          ` : ""}
           `}
-        </div>`;
+        </div>
+      `;
     }).join("");
   }
 
