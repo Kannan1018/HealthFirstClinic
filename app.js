@@ -682,22 +682,26 @@ async function loadPublicBooking(lookupToken) {
 /* ─── Doctor schedules ─── */
 async function loadDoctorSchedule(doctorId) {
   if (!firebaseReady || !doctorId) {
-    return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [] };
+    return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [], bookingHorizonDays: 7 };
   }
   const { doc, getDoc } = window._fs;
   try {
     const snap = await getDoc(doc(db, "doctorSchedules", doctorId));
     if (!snap.exists()) {
-      return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [] };
+      return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [], bookingHorizonDays: 7 };
     }
     const data = snap.data();
+    // Clamp horizon to allowed values; default to 7
+    const allowed = [7, 14, 30];
+    const horizon = allowed.includes(data.bookingHorizonDays) ? data.bookingHorizonDays : 7;
     return {
       weeklyPattern: data.weeklyPattern || defaultWeeklyPattern(),
-      blockedDates: data.blockedDates || []
+      blockedDates: data.blockedDates || [],
+      bookingHorizonDays: horizon
     };
   } catch (e) {
     console.error("loadDoctorSchedule:", e);
-    return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [] };
+    return { weeklyPattern: defaultWeeklyPattern(), blockedDates: [], bookingHorizonDays: 7 };
   }
 }
 
@@ -705,9 +709,12 @@ async function saveDoctorSchedule(doctorId, scheduleData) {
   if (!firebaseReady || !doctorId) return false;
   const { doc, setDoc, serverTimestamp } = window._fs;
   try {
+    const allowed = [7, 14, 30];
+    const horizon = allowed.includes(scheduleData.bookingHorizonDays) ? scheduleData.bookingHorizonDays : 7;
     await setDoc(doc(db, "doctorSchedules", doctorId), {
       weeklyPattern: scheduleData.weeklyPattern || defaultWeeklyPattern(),
       blockedDates: scheduleData.blockedDates || [],
+      bookingHorizonDays: horizon,
       updatedAt: serverTimestamp()
     });
     return true;
@@ -1306,8 +1313,9 @@ if (document.getElementById("docList")) {
 
     const today = new Date();
     const availableDates = []; // {idx, date}
-    // Look ahead 7 days (matches doctor's weekly schedule view)
-    for (let i = 0; i < 7; i++) {
+    // Use this doctor's chosen booking horizon (7, 14, or 30 days). Default 7.
+    const horizon = [7, 14, 30].includes(schedule.bookingHorizonDays) ? schedule.bookingHorizonDays : 7;
+    for (let i = 0; i < horizon; i++) {
       const d = new Date(today); d.setDate(today.getDate() + i);
       const weekday = String(d.getDay());
       const dayPattern = schedule.weeklyPattern[weekday];
@@ -3591,6 +3599,15 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
             <option value="">— Select a doctor —</option>
           </select>
         </div>
+        <div id="horizonPickerWrap" style="display:none;background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+            <div style="flex:1;min-width:240px">
+              <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px">📆 How far ahead can patients book?</div>
+              <div style="font-size:12px;color:var(--navy-m);line-height:1.5">Choose how many days into the future patients see in the booking page.</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap" id="horizonPicker"></div>
+          </div>
+        </div>
         <div id="scheduleGrid"></div>
       `;
       const doctors = await loadDoctors({ includeUnavailable: true });
@@ -3604,7 +3621,20 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
     } else if (me.id) {
       currentScheduleDoctorId = me.id;
       currentScheduleData = await loadDoctorSchedule(me.id);
-      document.getElementById("scheduleEditor").innerHTML = '<div id="scheduleGrid"></div>';
+      document.getElementById("scheduleEditor").innerHTML = `
+        <!-- Booking horizon control -->
+        <div style="background:var(--white);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:18px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+            <div style="flex:1;min-width:240px">
+              <div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px">📆 How far ahead can patients book?</div>
+              <div style="font-size:12px;color:var(--navy-m);line-height:1.5">Choose how many days into the future patients see in your booking page.</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap" id="horizonPicker"></div>
+          </div>
+        </div>
+        <div id="scheduleGrid"></div>
+      `;
+      renderHorizonPicker();
       renderScheduleGrid();
       renderBlockedDatesList();
     } else {
@@ -3614,16 +3644,45 @@ ${data.followup && data.followup !== 'No follow-up needed' ? `<div class="follow
 
   window.adminLoadDocSchedule = async function () {
     const docId = document.getElementById("adminDocPicker").value;
+    const wrap = document.getElementById("horizonPickerWrap");
     if (!docId) {
       document.getElementById("scheduleGrid").innerHTML = "";
       document.getElementById("blockedDatesList").innerHTML = "";
+      if (wrap) wrap.style.display = "none";
       currentScheduleDoctorId = null;
       return;
     }
     currentScheduleDoctorId = docId;
     currentScheduleData = await loadDoctorSchedule(docId);
+    if (wrap) wrap.style.display = "block";
+    renderHorizonPicker();
     renderScheduleGrid();
     renderBlockedDatesList();
+  };
+
+  // Renders the 7 / 14 / 30 day picker pills (clicking updates currentScheduleData.bookingHorizonDays)
+  function renderHorizonPicker() {
+    const wrap = document.getElementById("horizonPicker");
+    if (!wrap) return;
+    const options = [
+      { days: 7, label: "7 days", sub: "1 week" },
+      { days: 14, label: "14 days", sub: "2 weeks" },
+      { days: 30, label: "30 days", sub: "1 month" }
+    ];
+    const current = currentScheduleData.bookingHorizonDays || 7;
+    wrap.innerHTML = options.map(o => {
+      const active = o.days === current;
+      return `<button onclick="setBookingHorizon(${o.days})" style="padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ff);transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:80px;${active ? 'background:var(--teal);color:var(--cream);border:1.5px solid var(--teal)' : 'background:white;color:var(--navy-s);border:1.5px solid var(--border-md)'}">
+        <span style="font-size:14px">${o.label}</span>
+        <span style="font-size:10px;opacity:.8;font-weight:500">${o.sub}</span>
+      </button>`;
+    }).join("");
+  }
+
+  window.setBookingHorizon = function (days) {
+    if (![7, 14, 30].includes(days)) return;
+    currentScheduleData.bookingHorizonDays = days;
+    renderHorizonPicker();
   };
 
   function renderScheduleGrid() {
