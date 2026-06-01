@@ -908,11 +908,18 @@ if (document.getElementById("homeDoctorsGrid") || document.getElementById("homeS
   };
 
   function renderHomeStats(doctors) {
+    // Legacy hero stat IDs (kept for backward compatibility)
     const el = document.getElementById("homeDoctorCount");
     if (el) el.textContent = doctors.length;
     const specCount = new Set(doctors.map(d => d.specialtyCategory || "Other")).size;
     const sEl = document.getElementById("homeSpecCount");
     if (sEl) sEl.textContent = specCount;
+
+    // New hero card live stats (replaces old "Verified Doctors / ONLINE" header)
+    const heroDoc = document.getElementById("heroDoctorCount");
+    if (heroDoc) heroDoc.textContent = doctors.length || 0;
+    const heroSpec = document.getElementById("heroSpecialtyCount");
+    if (heroSpec) heroSpec.textContent = specCount || 0;
   }
 
   function renderHomeSpecialties(doctors) {
