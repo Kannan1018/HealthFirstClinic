@@ -11,6 +11,19 @@
 </head>
 <body>
 
+<!-- Disable browser scroll restoration so refresh always starts at top (unless URL has hash) -->
+<script>
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
+  // On page load: if no hash in URL, scroll to top
+  window.addEventListener('load', function () {
+    if (!window.location.hash) {
+      window.scrollTo(0, 0);
+    }
+  });
+</script>
+
 <!-- ══════════════ NAV ══════════════ -->
 <nav id="mainNav">
   <div class="nav-inner">
@@ -89,10 +102,10 @@
         </div>
         <a href="book.html" class="btn-primary" style="width:100%;text-align:center;display:block">Book Now →</a>
       </div>
-      <!-- ── DOCTOR HOOK BANNER (replaces dark green 3-line accent box) ── -->
-      <div style="background:linear-gradient(135deg, var(--navy) 0%, var(--teal-dd) 100%);color:white;border-radius:var(--r-xl);padding:18px 22px;margin-top:18px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.08)">
-        <div style="font-size:14px;font-weight:600;margin-bottom:6px;letter-spacing:0.01em">Trusted by patients across India</div>
-        <a href="for-doctors.html" style="color:white;font-size:13px;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.45);padding-bottom:1px;display:inline-block;transition:opacity .15s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">Are you a doctor? List your clinic free →</a>
+      <!-- ── DOCTOR HOOK BANNER (uses existing hero-card-accent CSS) ── -->
+      <div class="hero-card-accent" style="text-align:center">
+        <div style="font-weight:600;margin-bottom:6px;font-size:14px">Trusted by patients across India</div>
+        <a href="for-doctors.html" style="color:inherit;font-size:13px;text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:1px;opacity:0.9;display:inline-block">Are you a doctor? List your clinic free →</a>
       </div>
     </div>
   </div>
