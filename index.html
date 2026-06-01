@@ -64,28 +64,35 @@
     </div>
     <div class="hero-card-wrap">
       <div class="hero-card">
-        <div class="hc-header">
-          <div class="hc-avatar">👨‍⚕️</div>
-          <div>
-            <div class="hc-name">Verified Doctors</div>
-            <div class="hc-spec">Across all specialties</div>
+        <!-- ── LIVE STATS HEADER (replaces "Verified Doctors / ONLINE" badge) ── -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg, var(--teal-l) 0%, var(--cream) 100%);border-radius:var(--r-lg);margin-bottom:18px;border:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:42px;height:42px;background:var(--teal);color:white;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700">✓</div>
+            <div>
+              <div style="font-family:var(--ff-d);font-weight:700;color:var(--navy);font-size:18px;line-height:1.1"><span id="heroDoctorCount">—</span> verified doctors</div>
+              <div style="font-size:12px;color:var(--navy-m);margin-top:3px"><span id="heroSpecialtyCount">—</span> specialties · Same-day available</div>
+            </div>
           </div>
-          <div class="hc-avail"><span class="avail-dot"></span> Online</div>
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;letter-spacing:1px;font-weight:700">Today</div>
+            <div style="font-size:13px;color:var(--teal-d);font-weight:700">Open</div>
+          </div>
         </div>
+
         <div class="hc-slots">
           <div class="hc-slot-label">Why HealthFirst</div>
           <div class="hc-slot-row" style="flex-direction:column;gap:6px">
-            <span class="hc-slot active" style="text-align:left;padding:8px 12px">✓ Instant booking confirmation</span>
+            <span class="hc-slot" style="text-align:left;padding:8px 12px">✓ Instant booking confirmation</span>
             <span class="hc-slot" style="text-align:left;padding:8px 12px">✓ Verified doctor profiles</span>
             <span class="hc-slot" style="text-align:left;padding:8px 12px">✓ Online + clinic payment</span>
           </div>
         </div>
         <a href="book.html" class="btn-primary" style="width:100%;text-align:center;display:block">Book Now →</a>
       </div>
-      <div class="hero-card-accent">
-        <div>✓ Free cancellation up to 2 hrs</div>
-        <div>✓ Real patient reviews</div>
-        <div>✓ Pan-India coverage</div>
+      <!-- ── DOCTOR HOOK BANNER (replaces dark green 3-line accent box) ── -->
+      <div style="background:linear-gradient(135deg, var(--navy) 0%, var(--teal-dd) 100%);color:white;border-radius:var(--r-xl);padding:18px 22px;margin-top:18px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.08)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px;letter-spacing:0.01em">Trusted by patients across India</div>
+        <a href="for-doctors.html" style="color:white;font-size:13px;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.45);padding-bottom:1px;display:inline-block;transition:opacity .15s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">Are you a doctor? List your clinic free →</a>
       </div>
     </div>
   </div>
@@ -282,6 +289,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=54"></script>
 </body>
 </html>
