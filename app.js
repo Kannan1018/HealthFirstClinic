@@ -2797,6 +2797,805 @@ ${p.followup && p.followup !== 'No follow-up needed' ? `<div class="followup-tag
     }
   }
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     BILLING SYSTEM — Doctor subscriptions & per-booking commissions
+     Two plans (matching for-doctors.html pricing radios):
+       - 'subscription' → ₹2,000 / month flat
+       - 'commission'   → 10% per completed booking
+     Invoice schema (Firestore collection "invoices"):
+       { doctorId, doctorEmail, doctorName, plan, periodMonth (YYYY-MM),
+         amount, bookingCount, bookingRevenue,
+         status: 'pending' | 'paid' | 'overdue' | 'cancelled',
+         generatedAt, dueDate (YYYY-MM-DD), paidAt, paymentMethod,
+         paymentReference, notes }
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  // PLAN RATES — change here if pricing ever changes (also update for-doctors.html)
+  const BILLING_RATES = {
+    subscription: { monthly: 2000, label: "₹2,000/mo Subscription" },
+    commission:   { percent: 10,   label: "10% per Booking" }
+  };
+
+  // ADMIN's payment receiving details — shown on invoices for doctors to pay you
+  const BILLING_PAYMENT_INFO = {
+    upiId:     "kannan@upi",              // <-- ADMIN: edit to your real UPI ID
+    accountHolder: "HealthFirst",
+    bankName:  "[Your Bank Name]",         // <-- ADMIN: edit before going live
+    accountNo: "[Your Account Number]",    // <-- ADMIN: edit before going live
+    ifsc:      "[Your IFSC]",              // <-- ADMIN: edit before going live
+    contactEmail: "hello@healthfirst.in"
+  };
+
+  // ── Helper: format YYYY-MM into "June 2026"
+  function _formatPeriodLabel(periodMonth) {
+    if (!periodMonth) return "—";
+    const [y, m] = periodMonth.split("-");
+    const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    return `${monthNames[parseInt(m, 10) - 1]} ${y}`;
+  }
+
+  // ── Helper: current period YYYY-MM
+  function _currentPeriod() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  // ── Helper: days since a YYYY-MM-DD date
+  function _daysSince(yyyymmdd) {
+    if (!yyyymmdd) return 0;
+    const d = new Date(yyyymmdd + "T00:00:00");
+    const diff = (new Date() - d) / (1000 * 60 * 60 * 24);
+    return Math.floor(diff);
+  }
+
+  // ── Calculates this month's commission amount for a doctor (sum of fees × 10%)
+  async function _calculateCommissionForPeriod(doctorEmail, periodMonth) {
+    if (!firebaseReady) return { amount: 0, bookingCount: 0, bookingRevenue: 0 };
+    try {
+      const { collection, query, where, getDocs } = window._fs;
+      const q = query(collection(db, "bookings"), where("doctorEmail", "==", doctorEmail), where("status", "==", "done"));
+      const snap = await getDocs(q);
+      let revenue = 0, count = 0;
+      snap.forEach(d => {
+        const b = d.data();
+        if (!b.date) return;
+        const bookingMonth = b.date.substring(0, 7); // YYYY-MM
+        if (bookingMonth === periodMonth) {
+          revenue += parseInt(b.fee) || 0;
+          count += 1;
+        }
+      });
+      return { amount: Math.round(revenue * BILLING_RATES.commission.percent / 100), bookingCount: count, bookingRevenue: revenue };
+    } catch (e) {
+      console.error("Commission calc failed:", e); return { amount: 0, bookingCount: 0, bookingRevenue: 0 };
+    }
+  }
+
+  // ── Load all invoices (admin) or filter to one doctor (doctor view)
+  async function _loadInvoices(filterDoctorEmail) {
+    if (!firebaseReady) return [];
+    try {
+      const { collection, query, where, getDocs } = window._fs;
+      let q;
+      if (filterDoctorEmail) {
+        q = query(collection(db, "invoices"), where("doctorEmail", "==", filterDoctorEmail));
+      } else {
+        q = collection(db, "invoices");
+      }
+      const snap = await getDocs(q);
+      const list = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.periodMonth || "").localeCompare(a.periodMonth || ""));
+      return list;
+    } catch (e) {
+      console.error("Load invoices:", e); return [];
+    }
+  }
+
+  // ── Auto-suspend doctors with invoices overdue 30+ days
+  async function _autoSuspendOverdueDoctors(invoices, doctorsMap) {
+    if (!firebaseReady) return 0;
+    const { doc, updateDoc } = window._fs;
+    let suspendedCount = 0;
+    // Group: doctorEmail → has 30+ day overdue invoice
+    const flagged = new Set();
+    invoices.forEach(inv => {
+      if (inv.status === "paid" || inv.status === "cancelled") return;
+      const days = _daysSince(inv.dueDate);
+      if (days >= 30) flagged.add(inv.doctorEmail);
+    });
+    for (const email of flagged) {
+      const d = doctorsMap[email];
+      if (d && d.available !== false) {
+        try {
+          await updateDoc(doc(db, "doctors", d.id), { available: false });
+          d.available = false;
+          suspendedCount += 1;
+        } catch (e) { console.warn("Auto-suspend failed for", email, e); }
+      }
+    }
+    return suspendedCount;
+  }
+
+  // ────────────────────────────────────────────────────────────
+  // ADMIN BILLING VIEW
+  // ────────────────────────────────────────────────────────────
+
+  window.renderAdminBilling = async function () {
+    const list = document.getElementById("billingDoctorList");
+    if (!list) return;
+    list.innerHTML = `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:14px">Loading…</div>`;
+
+    const doctors = window._allDoctors || (await loadDoctors());
+    const invoices = await _loadInvoices();
+
+    // Build per-doctor billing summary
+    const doctorsMap = {};
+    doctors.forEach(d => { doctorsMap[(d.email || "").toLowerCase()] = d; });
+
+    // Update invoice statuses (anything past due date → mark as overdue in display)
+    invoices.forEach(inv => {
+      if (inv.status === "pending" && _daysSince(inv.dueDate) > 0) inv.status = "overdue";
+    });
+
+    // Auto-suspend any doctor with 30+ day overdue invoice
+    const suspendedNow = await _autoSuspendOverdueDoctors(invoices, doctorsMap);
+    if (suspendedNow > 0) {
+      console.log(`Auto-suspended ${suspendedNow} doctor(s) with 30+ day overdue invoices.`);
+    }
+
+    // Summary calculations for the cards
+    const currentPeriod = _currentPeriod();
+    let sumInvoiced = 0, sumCollected = 0, sumPending = 0, sumOverdue = 0;
+    let countPending = 0, countOverdue = 0;
+    invoices.forEach(inv => {
+      const amt = inv.amount || 0;
+      if (inv.periodMonth === currentPeriod) sumInvoiced += amt;
+      if (inv.status === "paid" && inv.paidAt) {
+        const paidDate = inv.paidAt.toDate ? inv.paidAt.toDate() : new Date(inv.paidAt);
+        if (paidDate.toISOString().substring(0, 7) === currentPeriod) sumCollected += amt;
+      }
+      if (inv.status === "pending") { sumPending += amt; countPending += 1; }
+      if (inv.status === "overdue") { sumOverdue += amt; countOverdue += 1; }
+    });
+
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl("billSumInvoiced", sumInvoiced.toLocaleString("en-IN"));
+    setEl("billSumCollected", sumCollected.toLocaleString("en-IN"));
+    setEl("billSumPending", sumPending.toLocaleString("en-IN"));
+    setEl("billSumOverdue", sumOverdue.toLocaleString("en-IN"));
+    setEl("billCountPending", countPending);
+    setEl("billCountOverdue", countOverdue);
+
+    // Filter
+    const filterStatus = document.getElementById("billingFilterStatus")?.value || "all";
+
+    // Per-doctor rows
+    if (doctors.length === 0) {
+      list.innerHTML = `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:24px">No doctors on the platform yet. Approve applications to get started.</div>`;
+      return;
+    }
+
+    const rows = doctors.map(d => {
+      const email = (d.email || "").toLowerCase();
+      const docInvoices = invoices.filter(i => (i.doctorEmail || "").toLowerCase() === email);
+      const currentInv = docInvoices.find(i => i.periodMonth === currentPeriod);
+      const lastPaid = docInvoices.filter(i => i.status === "paid").sort((a, b) => {
+        const ad = a.paidAt?.toDate ? a.paidAt.toDate() : new Date(a.paidAt || 0);
+        const bd = b.paidAt?.toDate ? b.paidAt.toDate() : new Date(b.paidAt || 0);
+        return bd - ad;
+      })[0];
+      const overdueInvoices = docInvoices.filter(i => i.status === "overdue" || (i.status === "pending" && _daysSince(i.dueDate) > 0));
+      const oldestOverdue = overdueInvoices.sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""))[0];
+
+      // Determine status pill
+      let statusPill;
+      if (oldestOverdue && _daysSince(oldestOverdue.dueDate) >= 30) {
+        statusPill = `<span style="background:#FEE2E2;color:#991B1B;font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px">🔴 OVERDUE ${_daysSince(oldestOverdue.dueDate)}d</span>`;
+      } else if (overdueInvoices.length > 0) {
+        statusPill = `<span style="background:#FEF3C7;color:#92400E;font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px">🟡 OVERDUE</span>`;
+      } else if (currentInv && currentInv.status === "pending") {
+        statusPill = `<span style="background:#FEF3C7;color:#92400E;font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px">⏳ PENDING</span>`;
+      } else if (currentInv && currentInv.status === "paid") {
+        statusPill = `<span style="background:#D1FAE5;color:#065F46;font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px">✓ PAID</span>`;
+      } else {
+        statusPill = `<span style="background:var(--bg);color:var(--navy-m);font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px">— NO INVOICE</span>`;
+      }
+
+      // Filter check
+      if (filterStatus !== "all") {
+        if (filterStatus === "pending" && !(currentInv && currentInv.status === "pending")) return "";
+        if (filterStatus === "overdue" && overdueInvoices.length === 0) return "";
+        if (filterStatus === "paid" && !(currentInv && currentInv.status === "paid")) return "";
+      }
+
+      const planLabel = d.pricingModel === "commission"
+        ? BILLING_RATES.commission.label
+        : BILLING_RATES.subscription.label;
+      const dueText = currentInv
+        ? `₹${(currentInv.amount || 0).toLocaleString("en-IN")} <span style="font-size:11px;color:var(--navy-m)">· ${currentInv.id}</span>`
+        : `<span style="font-size:12px;color:var(--navy-m);font-style:italic">Not generated yet</span>`;
+      const lastPaidText = lastPaid
+        ? `₹${(lastPaid.amount || 0).toLocaleString("en-IN")} <span style="font-size:11px;color:var(--navy-m)">· ${_formatPeriodLabel(lastPaid.periodMonth)}</span>`
+        : `<span style="font-size:12px;color:var(--navy-m);font-style:italic">No payments yet</span>`;
+      const isSuspended = d.available === false;
+
+      return `
+        <div style="background:var(--bg);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;border:1px solid var(--border)${isSuspended ? ';opacity:0.7' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
+                <div style="font-family:var(--ff-d);font-weight:700;color:var(--navy);font-size:15px">${escapeHtml(d.name || "Unnamed")}</div>
+                ${statusPill}
+                ${isSuspended ? '<span style="background:#FEE2E2;color:#991B1B;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">SUSPENDED</span>' : ''}
+              </div>
+              <div style="font-size:12px;color:var(--navy-m);margin-bottom:3px">📋 Plan: <strong style="color:var(--navy-s)">${planLabel}</strong></div>
+              <div style="font-size:12px;color:var(--navy-m);margin-bottom:3px">📧 ${escapeHtml(d.email || "")}</div>
+              <div style="display:flex;gap:20px;margin-top:6px;flex-wrap:wrap">
+                <div style="font-size:12px"><span style="color:var(--navy-m)">${_formatPeriodLabel(currentPeriod)} due:</span> <strong>${dueText}</strong></div>
+                <div style="font-size:12px"><span style="color:var(--navy-m)">Last paid:</span> ${lastPaidText}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${!currentInv ? `<button onclick="openGenerateInvoice('${d.id}','${escapeHtml(d.email || "")}')" style="padding:6px 12px;background:var(--teal);color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--ff)">🧾 Generate</button>` : ""}
+              ${currentInv && currentInv.status !== "paid" ? `<button onclick="openMarkPaid('${currentInv.id}')" style="padding:6px 12px;background:#10B981;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--ff)">✓ Mark Paid</button>` : ""}
+              ${currentInv ? `<button onclick="downloadInvoicePDF('${currentInv.id}')" style="padding:6px 12px;background:var(--navy);color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--ff)" title="Open invoice PDF">📄 PDF</button>` : ""}
+              ${currentInv ? `<button onclick="shareInvoiceWhatsApp('${currentInv.id}')" style="padding:6px 12px;background:#25D366;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--ff)">📱 WhatsApp</button>` : ""}
+              <button onclick="toggleDoctorHistory('${d.id}')" style="padding:6px 12px;background:transparent;color:var(--navy-s);border:1px solid var(--border-md);border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--ff)">📜 History</button>
+              ${isSuspended ? `<button onclick="reactivateDoctor('${d.id}')" style="padding:6px 12px;background:#10B981;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--ff)">🔓 Reactivate</button>` : ""}
+            </div>
+          </div>
+          <div id="docHistory-${d.id}" style="display:none;margin-top:12px;border-top:1px dashed var(--border-md);padding-top:12px">
+            ${docInvoices.length === 0 ? '<div style="font-size:12px;color:var(--navy-m);text-align:center;padding:10px">No invoices yet for this doctor.</div>' : docInvoices.map(inv => `
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:7px 0;border-bottom:1px solid var(--border)">
+                <div>
+                  <strong style="color:var(--navy)">${_formatPeriodLabel(inv.periodMonth)}</strong>
+                  <span style="color:var(--navy-m);margin-left:8px">${inv.id}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="font-weight:700">₹${(inv.amount || 0).toLocaleString("en-IN")}</span>
+                  <span style="font-size:10px;padding:2px 7px;border-radius:8px;font-weight:700;${inv.status === 'paid' ? 'background:#D1FAE5;color:#065F46' : inv.status === 'overdue' ? 'background:#FEE2E2;color:#991B1B' : 'background:#FEF3C7;color:#92400E'}">${inv.status.toUpperCase()}</span>
+                  <button onclick="downloadInvoicePDF('${inv.id}')" style="background:none;border:1px solid var(--border-md);color:var(--navy-s);padding:3px 8px;border-radius:5px;font-size:10px;cursor:pointer;font-family:var(--ff)">PDF</button>
+                  ${inv.status !== 'paid' ? `<button onclick="openMarkPaid('${inv.id}')" style="background:#10B981;border:none;color:white;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:var(--ff)">Mark Paid</button>` : ''}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }).filter(Boolean).join("");
+
+    list.innerHTML = rows || `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:24px">No doctors match the current filter.</div>`;
+
+    // Cache for downstream operations
+    window._allInvoices = invoices;
+    window._billingDoctorsMap = doctorsMap;
+  };
+
+  window.toggleDoctorHistory = function (docId) {
+    const el = document.getElementById(`docHistory-${docId}`);
+    if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+  };
+
+  window.reactivateDoctor = async function (docId) {
+    if (!confirm("Reactivate this doctor? They'll be visible to patients again.\n\nMake sure they've paid before doing this.")) return;
+    try {
+      const { doc, updateDoc } = window._fs;
+      await updateDoc(doc(db, "doctors", docId), { available: true });
+      alert("✅ Doctor reactivated.");
+      renderAdminBilling();
+    } catch (e) { alert("❌ Could not reactivate: " + e.message); }
+  };
+
+  // ── Open Generate Invoice modal
+  window.openGenerateInvoice = async function (doctorId, doctorEmail) {
+    const doctors = window._allDoctors || (await loadDoctors());
+    const d = doctors.find(x => x.id === doctorId);
+    if (!d) { alert("Doctor not found."); return; }
+
+    const period = _currentPeriod();
+    const periodLabel = _formatPeriodLabel(period);
+    const plan = d.pricingModel || "subscription";
+
+    let amount, breakdown;
+    if (plan === "commission") {
+      const calc = await _calculateCommissionForPeriod(doctorEmail.toLowerCase(), period);
+      amount = calc.amount;
+      breakdown = `${calc.bookingCount} completed booking${calc.bookingCount !== 1 ? "s" : ""} · ₹${calc.bookingRevenue.toLocaleString("en-IN")} revenue · 10% = ₹${amount.toLocaleString("en-IN")}`;
+    } else {
+      amount = BILLING_RATES.subscription.monthly;
+      breakdown = `Flat monthly subscription`;
+    }
+
+    const body = document.getElementById("genInvoiceBody");
+    body.innerHTML = `
+      <div style="background:var(--bg);border-radius:var(--r);padding:14px;margin-bottom:14px;font-size:13px;line-height:1.6">
+        <div><strong>Doctor:</strong> ${escapeHtml(d.name)}</div>
+        <div><strong>Email:</strong> ${escapeHtml(d.email)}</div>
+        <div><strong>Plan:</strong> ${plan === "commission" ? BILLING_RATES.commission.label : BILLING_RATES.subscription.label}</div>
+        <div><strong>Period:</strong> ${periodLabel}</div>
+        <div style="margin-top:6px;color:var(--navy-m);font-size:12px">${breakdown}</div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px">Amount (₹)</label>
+        <input id="genInvAmount" type="number" value="${amount}" style="width:100%;padding:11px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:15px;font-weight:700;background:white;outline:none">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px">Due in (days from now)</label>
+        <input id="genInvDueDays" type="number" value="7" style="width:100%;padding:11px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:white;outline:none">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px">Notes (optional)</label>
+        <textarea id="genInvNotes" placeholder="e.g., Special offer applied" style="width:100%;padding:11px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:13px;background:white;outline:none;min-height:60px;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="closeGenInvoiceModal()" style="flex:1;padding:11px;background:var(--bg);border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-weight:600;color:var(--navy);cursor:pointer">Cancel</button>
+        <button onclick="confirmGenerateInvoice('${doctorId}','${escapeHtml(doctorEmail.toLowerCase())}','${escapeHtml(d.name)}','${plan}','${period}')" style="flex:2;padding:11px;background:var(--teal);color:white;border:none;border-radius:var(--r);font-family:var(--ff);font-weight:700;cursor:pointer">Generate Invoice</button>
+      </div>
+    `;
+    document.getElementById("genInvoiceModal").style.display = "flex";
+  };
+
+  window.closeGenInvoiceModal = function () {
+    document.getElementById("genInvoiceModal").style.display = "none";
+  };
+
+  window.confirmGenerateInvoice = async function (doctorId, doctorEmail, doctorName, plan, period) {
+    const amount = parseInt(document.getElementById("genInvAmount").value) || 0;
+    const dueDays = parseInt(document.getElementById("genInvDueDays").value) || 7;
+    const notes = (document.getElementById("genInvNotes").value || "").trim();
+    if (amount <= 0) { alert("Amount must be greater than zero."); return; }
+
+    const now = new Date();
+    const due = new Date(now); due.setDate(now.getDate() + dueDays);
+    const dueDate = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}`;
+
+    // Generate invoice ID
+    const invId = `INV-${period.replace("-", "")}-${doctorId.substring(0, 6).toUpperCase()}`;
+
+    let bookingCount = 0, bookingRevenue = 0;
+    if (plan === "commission") {
+      const calc = await _calculateCommissionForPeriod(doctorEmail, period);
+      bookingCount = calc.bookingCount;
+      bookingRevenue = calc.bookingRevenue;
+    }
+
+    try {
+      const { doc, setDoc, serverTimestamp } = window._fs;
+      await setDoc(doc(db, "invoices", invId), {
+        doctorId, doctorEmail, doctorName,
+        plan, periodMonth: period,
+        amount, bookingCount, bookingRevenue,
+        status: "pending",
+        generatedAt: serverTimestamp(),
+        dueDate,
+        paidAt: null,
+        paymentMethod: null,
+        paymentReference: null,
+        notes
+      });
+      closeGenInvoiceModal();
+      alert(`✅ Invoice ${invId} generated for ₹${amount.toLocaleString("en-IN")}.\n\nDue date: ${dueDate}`);
+      renderAdminBilling();
+    } catch (e) {
+      alert("❌ Could not save invoice: " + e.message + "\n\nMake sure firestore.rules includes the /invoices collection rule.");
+    }
+  };
+
+  // ── Mark invoice as paid
+  window.openMarkPaid = function (invoiceId) {
+    const inv = (window._allInvoices || []).find(i => i.id === invoiceId);
+    if (!inv) { alert("Invoice not found. Refresh and try again."); return; }
+
+    const today = new Date().toISOString().split("T")[0];
+    document.getElementById("markPaidBody").innerHTML = `
+      <div style="background:#ECFDF5;border:1px solid #6EE7B7;border-radius:var(--r);padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.6">
+        <div><strong>Doctor:</strong> ${escapeHtml(inv.doctorName)}</div>
+        <div><strong>Invoice:</strong> ${inv.id}</div>
+        <div><strong>Period:</strong> ${_formatPeriodLabel(inv.periodMonth)}</div>
+        <div><strong>Amount:</strong> ₹${(inv.amount || 0).toLocaleString("en-IN")}</div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px">Payment Method</label>
+        <select id="paidMethod" style="width:100%;padding:11px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:white;outline:none">
+          <option value="UPI">UPI</option>
+          <option value="Bank Transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
+          <option value="Cash">Cash</option>
+          <option value="Cheque">Cheque</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px">Payment Date</label>
+        <input id="paidDate" type="date" value="${today}" max="${today}" style="width:100%;padding:11px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:white;outline:none">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px">Reference / Transaction ID (optional)</label>
+        <input id="paidRef" type="text" placeholder="e.g., UPI ref no, cheque no" style="width:100%;padding:11px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:white;outline:none">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="closeMarkPaidModal()" style="flex:1;padding:11px;background:var(--bg);border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-weight:600;color:var(--navy);cursor:pointer">Cancel</button>
+        <button onclick="confirmMarkPaid('${invoiceId}')" style="flex:2;padding:11px;background:#10B981;color:white;border:none;border-radius:var(--r);font-family:var(--ff);font-weight:700;cursor:pointer">✓ Mark as Paid</button>
+      </div>
+    `;
+    document.getElementById("markPaidModal").style.display = "flex";
+  };
+
+  window.closeMarkPaidModal = function () {
+    document.getElementById("markPaidModal").style.display = "none";
+  };
+
+  window.confirmMarkPaid = async function (invoiceId) {
+    const method = document.getElementById("paidMethod").value;
+    const date = document.getElementById("paidDate").value;
+    const ref = (document.getElementById("paidRef").value || "").trim();
+    if (!date) { alert("Please pick a payment date."); return; }
+    try {
+      const { doc, updateDoc } = window._fs;
+      await updateDoc(doc(db, "invoices", invoiceId), {
+        status: "paid",
+        paidAt: new Date(date + "T12:00:00"),
+        paymentMethod: method,
+        paymentReference: ref || null
+      });
+      closeMarkPaidModal();
+      alert("✅ Invoice marked as paid.");
+      renderAdminBilling();
+    } catch (e) {
+      alert("❌ Could not update: " + e.message);
+    }
+  };
+
+  // ── Generate all monthly invoices at once (one-click bulk creation)
+  window.generateAllMonthlyInvoices = async function () {
+    const doctors = window._allDoctors || (await loadDoctors());
+    const period = _currentPeriod();
+    if (!confirm(`Generate invoices for ${doctors.length} doctor(s) for ${_formatPeriodLabel(period)}?\n\nFor subscription doctors: ₹2,000 each\nFor commission doctors: 10% of completed bookings this month\n\nSkips doctors who already have an invoice this month.`)) return;
+
+    const invoices = await _loadInvoices();
+    let created = 0, skipped = 0;
+    const { doc, setDoc, serverTimestamp } = window._fs;
+
+    for (const d of doctors) {
+      const email = (d.email || "").toLowerCase();
+      const existing = invoices.find(i => i.doctorEmail === email && i.periodMonth === period);
+      if (existing) { skipped += 1; continue; }
+
+      const plan = d.pricingModel || "subscription";
+      let amount, bookingCount = 0, bookingRevenue = 0;
+      if (plan === "commission") {
+        const calc = await _calculateCommissionForPeriod(email, period);
+        amount = calc.amount;
+        bookingCount = calc.bookingCount;
+        bookingRevenue = calc.bookingRevenue;
+        if (amount === 0) { skipped += 1; continue; } // skip if no bookings = nothing to invoice
+      } else {
+        amount = BILLING_RATES.subscription.monthly;
+      }
+
+      const due = new Date(); due.setDate(due.getDate() + 7);
+      const dueDate = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}`;
+      const invId = `INV-${period.replace("-", "")}-${d.id.substring(0, 6).toUpperCase()}`;
+
+      try {
+        await setDoc(doc(db, "invoices", invId), {
+          doctorId: d.id, doctorEmail: email, doctorName: d.name,
+          plan, periodMonth: period,
+          amount, bookingCount, bookingRevenue,
+          status: "pending",
+          generatedAt: serverTimestamp(),
+          dueDate,
+          paidAt: null, paymentMethod: null, paymentReference: null, notes: ""
+        });
+        created += 1;
+      } catch (e) { console.error("Bulk gen failed for", email, e); }
+    }
+
+    alert(`✅ Done!\n\n${created} invoice(s) created\n${skipped} skipped (already exist or no bookings)`);
+    renderAdminBilling();
+  };
+
+  // ── Invoice PDF (opens print-ready view in new window)
+  window.downloadInvoicePDF = async function (invoiceId) {
+    const inv = (window._allInvoices || []).find(i => i.id === invoiceId);
+    if (!inv) { alert("Invoice not found."); return; }
+
+    const periodLabel = _formatPeriodLabel(inv.periodMonth);
+    const planLabel = inv.plan === "commission" ? BILLING_RATES.commission.label : BILLING_RATES.subscription.label;
+    const generatedDate = inv.generatedAt?.toDate ? inv.generatedAt.toDate() : new Date();
+    const dueDate = inv.dueDate || "—";
+    const isPaid = inv.status === "paid";
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${inv.id}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font-family: Georgia, serif; color: #1F2F26; padding: 20px; background: white; margin: 0; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #3D5A4C; padding-bottom: 18px; margin-bottom: 24px; }
+  .brand-name { font-size: 28px; font-weight: 800; color: #3D5A4C; letter-spacing: -0.5px; }
+  .brand-sub { font-size: 12px; color: #888; margin-top: 4px; }
+  .inv-meta { text-align: right; }
+  .inv-meta .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .inv-meta .value { font-size: 16px; color: #1F2F26; font-weight: 700; margin-bottom: 8px; }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 28px; }
+  .party { background: #F5F1EA; padding: 14px 18px; border-radius: 8px; }
+  .party .heading { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 5px; }
+  .party .body { font-size: 13px; line-height: 1.6; color: #1F2F26; }
+  .line-table { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+  .line-table th { background: #3D5A4C; color: white; text-align: left; padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .line-table th.right, .line-table td.right { text-align: right; }
+  .line-table td { padding: 14px; border-bottom: 1px solid #DDE5DB; font-size: 13px; }
+  .line-table tr.total td { border-top: 2px solid #3D5A4C; border-bottom: none; font-weight: 800; font-size: 16px; padding: 14px; background: #EEF1ED; }
+  .pay-info { background: #F5F1EA; border-left: 4px solid #3D5A4C; border-radius: 6px; padding: 18px 22px; margin: 22px 0; }
+  .pay-info h3 { font-size: 14px; font-weight: 800; color: #3D5A4C; margin-bottom: 10px; }
+  .pay-info p { font-size: 13px; line-height: 1.75; color: #1F2F26; margin: 0; }
+  .pay-info .upi { font-family: 'Courier New', monospace; background: white; padding: 4px 8px; border-radius: 4px; border: 1px dashed #3D5A4C; display: inline-block; font-weight: 700; }
+  .paid-stamp { position: absolute; top: 220px; right: 80px; transform: rotate(-12deg); border: 4px solid #065F46; color: #065F46; font-family: 'Georgia', serif; font-size: 40px; font-weight: 800; padding: 8px 24px; border-radius: 8px; opacity: 0.7; }
+  .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #DDE5DB; font-size: 11px; color: #888; display: flex; justify-content: space-between; }
+  @media print { body { padding: 0; } .print-toolbar { display: none; } }
+  .print-toolbar { position: fixed; top: 12px; right: 12px; }
+  .print-toolbar button { padding: 9px 18px; background: #3D5A4C; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 700; }
+</style></head><body>
+${isPaid ? '<div class="paid-stamp">PAID ✓</div>' : ''}
+<div class="print-toolbar"><button onclick="window.print()">🖨 Print / Save as PDF</button></div>
+<div class="header">
+  <div>
+    <div class="brand-name">🏥 HealthFirst</div>
+    <div class="brand-sub">India's doctor booking platform</div>
+  </div>
+  <div class="inv-meta">
+    <div class="label">Invoice</div>
+    <div class="value">${escapeHtml(inv.id)}</div>
+    <div class="label">Issued</div>
+    <div style="font-size:13px">${generatedDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</div>
+  </div>
+</div>
+
+<div class="parties">
+  <div class="party">
+    <div class="heading">Billed To</div>
+    <div class="body">
+      <strong>${escapeHtml(inv.doctorName || "—")}</strong><br>
+      ${escapeHtml(inv.doctorEmail || "")}<br>
+      <span style="color:#888;font-size:11px">Doctor ID: ${escapeHtml(inv.doctorId || "—")}</span>
+    </div>
+  </div>
+  <div class="party">
+    <div class="heading">From</div>
+    <div class="body">
+      <strong>HealthFirst</strong><br>
+      ${escapeHtml(BILLING_PAYMENT_INFO.contactEmail)}<br>
+      <span style="color:#888;font-size:11px">${escapeHtml(periodLabel)} statement</span>
+    </div>
+  </div>
+</div>
+
+<table class="line-table">
+  <thead>
+    <tr><th>Description</th><th class="right">Amount</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <strong>${escapeHtml(planLabel)}</strong><br>
+        <span style="font-size:11px;color:#888">For period: ${escapeHtml(periodLabel)}</span>
+        ${inv.plan === "commission" ? `<br><span style="font-size:11px;color:#888">${inv.bookingCount} completed booking${inv.bookingCount !== 1 ? "s" : ""} · ₹${(inv.bookingRevenue || 0).toLocaleString("en-IN")} revenue × 10%</span>` : ""}
+        ${inv.notes ? `<br><span style="font-size:11px;color:#888;font-style:italic">Note: ${escapeHtml(inv.notes)}</span>` : ""}
+      </td>
+      <td class="right">₹${(inv.amount || 0).toLocaleString("en-IN")}</td>
+    </tr>
+    <tr class="total">
+      <td>TOTAL DUE${isPaid ? " (PAID)" : ""}</td>
+      <td class="right">₹${(inv.amount || 0).toLocaleString("en-IN")}</td>
+    </tr>
+  </tbody>
+</table>
+
+${!isPaid ? `
+<div class="pay-info">
+  <h3>How to pay</h3>
+  <p>
+    <strong>UPI:</strong> <span class="upi">${escapeHtml(BILLING_PAYMENT_INFO.upiId)}</span><br>
+    <strong>Bank Transfer:</strong> ${escapeHtml(BILLING_PAYMENT_INFO.accountHolder)} · ${escapeHtml(BILLING_PAYMENT_INFO.bankName)}<br>
+    A/C No: ${escapeHtml(BILLING_PAYMENT_INFO.accountNo)} · IFSC: ${escapeHtml(BILLING_PAYMENT_INFO.ifsc)}<br><br>
+    <strong>Due by:</strong> ${dueDate}<br>
+    After paying, please share the UPI reference number or transaction ID via WhatsApp or email to <strong>${escapeHtml(BILLING_PAYMENT_INFO.contactEmail)}</strong>.
+  </p>
+</div>` : `
+<div class="pay-info" style="background:#ECFDF5;border-left-color:#065F46">
+  <h3 style="color:#065F46">Payment received ✓</h3>
+  <p>
+    Paid on: <strong>${inv.paidAt?.toDate ? inv.paidAt.toDate().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "—"}</strong><br>
+    Method: <strong>${escapeHtml(inv.paymentMethod || "—")}</strong>
+    ${inv.paymentReference ? `<br>Reference: <strong>${escapeHtml(inv.paymentReference)}</strong>` : ""}
+  </p>
+</div>`}
+
+<div class="footer">
+  <div>Invoice generated by HealthFirst · ${new Date().toLocaleDateString("en-IN")}</div>
+  <div>Questions? ${escapeHtml(BILLING_PAYMENT_INFO.contactEmail)}</div>
+</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script>
+</body></html>`;
+
+    const w = window.open("", "_blank", "width=900,height=1000");
+    if (!w) { alert("⚠️ Pop-up blocked. Allow pop-ups and try again."); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  };
+
+  // ── Share invoice via WhatsApp
+  window.shareInvoiceWhatsApp = async function (invoiceId) {
+    const inv = (window._allInvoices || []).find(i => i.id === invoiceId);
+    if (!inv) { alert("Invoice not found."); return; }
+
+    const doctors = window._allDoctors || (await loadDoctors());
+    const d = doctors.find(x => (x.email || "").toLowerCase() === (inv.doctorEmail || "").toLowerCase());
+    const phone = (d?.phone || "").replace(/\D/g, "");
+    if (!phone) { alert("Doctor has no phone number on file."); return; }
+    const normalized = phone.length === 10 ? "91" + phone : phone;
+
+    const msg = `Hi Dr. ${inv.doctorName.replace(/^Dr\.?\s*/i, "")},\n\nYour HealthFirst invoice for ${_formatPeriodLabel(inv.periodMonth)} is ready:\n\n*Invoice ${inv.id}*\nAmount: ₹${(inv.amount || 0).toLocaleString("en-IN")}\nDue: ${inv.dueDate}\n\n*How to pay:*\nUPI: ${BILLING_PAYMENT_INFO.upiId}\nor Bank: ${BILLING_PAYMENT_INFO.accountHolder} · ${BILLING_PAYMENT_INFO.accountNo} · ${BILLING_PAYMENT_INFO.ifsc}\n\nAfter payment, please send the reference number to confirm.\n\nThank you!\n— HealthFirst Team`;
+    window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  // ────────────────────────────────────────────────────────────
+  // DOCTOR BILLING VIEW (their personal billing tab)
+  // ────────────────────────────────────────────────────────────
+
+  window.loadDoctorBilling = async function () {
+    const wrap = document.getElementById("doctorBillingWrap");
+    if (!wrap) return;
+    const me = window._currentDoctor || {};
+    if (!me.id || !me.email) {
+      wrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--navy-m)">Loading…</div>`;
+      return;
+    }
+
+    wrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--navy-m)">Loading your billing…</div>`;
+    const invoices = await _loadInvoices(me.email.toLowerCase());
+
+    // Compute statuses
+    invoices.forEach(inv => {
+      if (inv.status === "pending" && _daysSince(inv.dueDate) > 0) inv.status = "overdue";
+    });
+
+    const currentPeriod = _currentPeriod();
+    const currentInv = invoices.find(i => i.periodMonth === currentPeriod);
+    const overdue = invoices.filter(i => i.status === "overdue");
+    const totalPaid = invoices.filter(i => i.status === "paid").reduce((s, i) => s + (i.amount || 0), 0);
+
+    const plan = me.pricingModel || "subscription";
+    const planLabel = plan === "commission" ? BILLING_RATES.commission.label : BILLING_RATES.subscription.label;
+    const planDescription = plan === "commission"
+      ? "You pay 10% of consultation fees from completed bookings. No bookings = no charge."
+      : "Flat ₹2,000 per month, regardless of bookings. Keep 100% of consultation fees.";
+
+    wrap.innerHTML = `
+      <!-- Plan summary card -->
+      <div class="panel" style="margin-bottom:18px">
+        <div class="panel-head"><div class="panel-title">💳 Your Plan</div></div>
+        <div style="padding:18px 22px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:10px">
+            <div>
+              <div style="font-family:var(--ff-d);font-size:24px;font-weight:700;color:var(--navy)">${planLabel}</div>
+              <div style="font-size:13px;color:var(--navy-m);margin-top:4px">${planDescription}</div>
+            </div>
+            <div style="background:var(--teal-l);padding:10px 16px;border-radius:var(--r);text-align:right">
+              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px">Total Paid</div>
+              <div style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--teal-d)">₹${totalPaid.toLocaleString("en-IN")}</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--navy-m);background:var(--bg);padding:10px 12px;border-radius:6px;margin-top:8px">
+            💡 To change your plan, email <a href="mailto:${BILLING_PAYMENT_INFO.contactEmail}" style="color:var(--teal);font-weight:600">${BILLING_PAYMENT_INFO.contactEmail}</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Current dues -->
+      ${currentInv ? `
+        <div class="panel" style="margin-bottom:18px;${currentInv.status === 'overdue' ? 'border:2px solid #DC2626' : currentInv.status === 'paid' ? 'border:2px solid #10B981' : 'border:2px solid #F59E0B'}">
+          <div class="panel-head" style="${currentInv.status === 'overdue' ? 'background:#FEE2E2' : currentInv.status === 'paid' ? 'background:#D1FAE5' : 'background:#FEF3C7'}">
+            <div class="panel-title" style="${currentInv.status === 'overdue' ? 'color:#991B1B' : currentInv.status === 'paid' ? 'color:#065F46' : 'color:#92400E'}">
+              ${currentInv.status === 'paid' ? '✓' : currentInv.status === 'overdue' ? '⚠️' : '⏳'} ${_formatPeriodLabel(currentPeriod)} Invoice
+            </div>
+            <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;${currentInv.status === 'overdue' ? 'background:#991B1B;color:white' : currentInv.status === 'paid' ? 'background:#065F46;color:white' : 'background:#92400E;color:white'}">${currentInv.status.toUpperCase()}</span>
+          </div>
+          <div style="padding:22px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;margin-bottom:18px">
+              <div>
+                <div style="font-family:var(--ff-d);font-size:36px;font-weight:800;color:var(--navy);line-height:1">₹${(currentInv.amount || 0).toLocaleString("en-IN")}</div>
+                <div style="font-size:12px;color:var(--navy-m);margin-top:6px">Invoice ${currentInv.id} · Due ${currentInv.dueDate}</div>
+              </div>
+              <button onclick="downloadInvoicePDF('${currentInv.id}')" style="padding:10px 18px;background:var(--navy);color:white;border:none;border-radius:var(--r);font-family:var(--ff);font-size:13px;font-weight:700;cursor:pointer">📄 Download Invoice PDF</button>
+            </div>
+            ${currentInv.status !== 'paid' ? `
+              <div style="background:var(--bg);border-radius:var(--r);padding:18px 20px;border-left:4px solid var(--teal)">
+                <div style="font-family:var(--ff-d);font-weight:700;color:var(--navy);margin-bottom:10px;font-size:15px">💸 How to pay</div>
+                <div style="font-size:13px;line-height:1.85;color:var(--navy-s)">
+                  <div><strong>UPI ID:</strong> <span style="font-family:'Courier New',monospace;background:white;padding:3px 8px;border-radius:4px;border:1px dashed var(--teal);font-weight:700;color:var(--teal-d)">${escapeHtml(BILLING_PAYMENT_INFO.upiId)}</span></div>
+                  <div style="margin-top:6px"><strong>Or Bank Transfer:</strong></div>
+                  <div style="margin-left:14px;font-size:12px">
+                    A/C Name: ${escapeHtml(BILLING_PAYMENT_INFO.accountHolder)}<br>
+                    Bank: ${escapeHtml(BILLING_PAYMENT_INFO.bankName)}<br>
+                    A/C No: ${escapeHtml(BILLING_PAYMENT_INFO.accountNo)}<br>
+                    IFSC: ${escapeHtml(BILLING_PAYMENT_INFO.ifsc)}
+                  </div>
+                </div>
+                <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border-md);font-size:12px;color:var(--navy-m)">
+                  After payment, send the UPI reference / transaction ID to <strong style="color:var(--teal-d)">${escapeHtml(BILLING_PAYMENT_INFO.contactEmail)}</strong> or WhatsApp the admin to confirm.
+                </div>
+              </div>` : `
+              <div style="background:#ECFDF5;border-radius:var(--r);padding:14px 18px;border-left:4px solid #10B981">
+                <div style="font-size:13px;color:#065F46">
+                  ✓ Paid on <strong>${currentInv.paidAt?.toDate ? currentInv.paidAt.toDate().toLocaleDateString("en-IN") : "—"}</strong> via <strong>${escapeHtml(currentInv.paymentMethod || "—")}</strong>
+                  ${currentInv.paymentReference ? `<br><span style="font-size:11px;color:var(--navy-m)">Reference: ${escapeHtml(currentInv.paymentReference)}</span>` : ""}
+                </div>
+              </div>`}
+          </div>
+        </div>` : `
+        <div class="panel" style="margin-bottom:18px">
+          <div style="padding:32px 22px;text-align:center;color:var(--navy-m);font-size:14px">
+            📭 No invoice for ${_formatPeriodLabel(currentPeriod)} yet.<br>
+            <span style="font-size:12px">You'll be notified when admin generates your monthly invoice.</span>
+          </div>
+        </div>`}
+
+      ${overdue.length > 0 ? `
+        <div class="panel" style="margin-bottom:18px;border:2px solid #DC2626">
+          <div class="panel-head" style="background:#FEE2E2">
+            <div class="panel-title" style="color:#991B1B">⚠️ Overdue invoices (${overdue.length})</div>
+          </div>
+          <div style="padding:14px 22px;font-size:13px;color:#7F1D1D">
+            ${overdue.map(o => `
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #FCA5A5">
+                <div><strong>${_formatPeriodLabel(o.periodMonth)}</strong> · ₹${(o.amount || 0).toLocaleString("en-IN")} · ${_daysSince(o.dueDate)} days overdue</div>
+                <button onclick="downloadInvoicePDF('${o.id}')" style="background:#991B1B;color:white;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:700">View PDF</button>
+              </div>
+            `).join("")}
+            <div style="margin-top:12px;font-size:12px;color:#7F1D1D">
+              Pay these as soon as possible to avoid account suspension (30+ days overdue → automatic).
+            </div>
+          </div>
+        </div>` : ""}
+
+      <!-- Payment history -->
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">📜 Payment History</div></div>
+        <div style="padding:14px 22px">
+          ${invoices.filter(i => i.status === "paid").length === 0
+            ? `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:20px">No paid invoices yet.</div>`
+            : `
+              <table style="width:100%;font-size:13px;border-collapse:collapse">
+                <thead>
+                  <tr style="border-bottom:2px solid var(--border)">
+                    <th style="text-align:left;padding:8px 6px;font-size:11px;color:var(--navy-m);text-transform:uppercase;letter-spacing:0.5px">Period</th>
+                    <th style="text-align:left;padding:8px 6px;font-size:11px;color:var(--navy-m);text-transform:uppercase;letter-spacing:0.5px">Invoice ID</th>
+                    <th style="text-align:right;padding:8px 6px;font-size:11px;color:var(--navy-m);text-transform:uppercase;letter-spacing:0.5px">Amount</th>
+                    <th style="text-align:left;padding:8px 6px;font-size:11px;color:var(--navy-m);text-transform:uppercase;letter-spacing:0.5px">Paid on</th>
+                    <th style="text-align:left;padding:8px 6px;font-size:11px;color:var(--navy-m);text-transform:uppercase;letter-spacing:0.5px">Method</th>
+                    <th style="text-align:right;padding:8px 6px;font-size:11px;color:var(--navy-m);text-transform:uppercase;letter-spacing:0.5px"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${invoices.filter(i => i.status === "paid").map(i => `
+                    <tr style="border-bottom:1px solid var(--border)">
+                      <td style="padding:10px 6px;font-weight:600;color:var(--navy)">${_formatPeriodLabel(i.periodMonth)}</td>
+                      <td style="padding:10px 6px;color:var(--navy-m);font-size:11px;font-family:'Courier New',monospace">${escapeHtml(i.id)}</td>
+                      <td style="padding:10px 6px;text-align:right;font-weight:700">₹${(i.amount || 0).toLocaleString("en-IN")}</td>
+                      <td style="padding:10px 6px;color:var(--navy-s)">${i.paidAt?.toDate ? i.paidAt.toDate().toLocaleDateString("en-IN") : "—"}</td>
+                      <td style="padding:10px 6px;color:var(--navy-s)">${escapeHtml(i.paymentMethod || "—")}</td>
+                      <td style="padding:10px 6px;text-align:right"><button onclick="downloadInvoicePDF('${i.id}')" style="background:none;border:1px solid var(--border-md);color:var(--navy-s);padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:var(--ff)">📄 PDF</button></td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>`}
+        </div>
+      </div>
+    `;
+
+    // Cache for PDF generation
+    window._allInvoices = invoices;
+  };
+
   /* ─── DOCTOR PROFILE PHOTO UPLOAD ─── */
   // Resizes a File to a 400x400 JPEG dataURL under ~150KB for Firestore storage
   function _resizeImageToDataURL(file, maxDim) {
@@ -3940,12 +4739,16 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     const applications = await loadDoctorApplications();
     window._adminAllBookings = bookings; // cache for filtering
     window._adminAllDoctors = doctors;
+    window._allDoctors = doctors; // also cache for billing module
 
     renderAdminBookings(bookings);
 
     // Wire up admin filters & notifications
     if (typeof window.populateDoctorFilterDropdown === 'function') window.populateDoctorFilterDropdown();
     if (typeof window.refreshAdminNotifications === 'function') window.refreshAdminNotifications(applications);
+
+    // Render billing dashboard
+    if (typeof window.renderAdminBilling === 'function') window.renderAdminBilling();
 
     const docList = document.getElementById("docManageList");
     if (docList) {

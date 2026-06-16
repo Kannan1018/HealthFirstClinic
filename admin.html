@@ -164,6 +164,51 @@
     </div>
   </div>
 
+  <!-- ── BILLING PANEL ── -->
+  <div class="panel" style="margin-bottom:24px" id="billingPanel">
+    <div class="panel-head">
+      <div class="panel-title">💰 Doctor Billing & Subscriptions</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="billingFilterStatus" onchange="renderAdminBilling()" style="padding:6px 10px;border:1.5px solid var(--border-md);border-radius:6px;font-family:var(--ff);font-size:12px;background:white;outline:none">
+          <option value="all">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="overdue">Overdue</option>
+          <option value="paid">Paid this month</option>
+        </select>
+        <button onclick="generateAllMonthlyInvoices()" style="padding:7px 14px;background:var(--teal);color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--ff)" title="Generate invoices for all subscription doctors for the current month">🧾 Generate This Month</button>
+      </div>
+    </div>
+
+    <!-- Billing summary cards -->
+    <div style="padding:18px 20px 8px 20px;display:grid;grid-template-columns:repeat(4, 1fr);gap:12px">
+      <div style="background:var(--teal-l);border-radius:var(--r);padding:14px;text-align:center">
+        <div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px">Invoiced</div>
+        <div style="font-family:var(--ff-d);font-size:22px;color:var(--navy);font-weight:700;margin-top:4px">₹<span id="billSumInvoiced">0</span></div>
+        <div style="font-size:11px;color:var(--navy-m);margin-top:2px">This month</div>
+      </div>
+      <div style="background:#D1FAE5;border-radius:var(--r);padding:14px;text-align:center">
+        <div style="font-size:11px;color:#065F46;text-transform:uppercase;font-weight:700;letter-spacing:0.5px">Collected</div>
+        <div style="font-family:var(--ff-d);font-size:22px;color:#065F46;font-weight:700;margin-top:4px">₹<span id="billSumCollected">0</span></div>
+        <div style="font-size:11px;color:#065F46;margin-top:2px">Paid this month</div>
+      </div>
+      <div style="background:#FEF3C7;border-radius:var(--r);padding:14px;text-align:center">
+        <div style="font-size:11px;color:#92400E;text-transform:uppercase;font-weight:700;letter-spacing:0.5px">Pending</div>
+        <div style="font-family:var(--ff-d);font-size:22px;color:#92400E;font-weight:700;margin-top:4px">₹<span id="billSumPending">0</span></div>
+        <div style="font-size:11px;color:#92400E;margin-top:2px"><span id="billCountPending">0</span> invoices</div>
+      </div>
+      <div style="background:#FEE2E2;border-radius:var(--r);padding:14px;text-align:center">
+        <div style="font-size:11px;color:#991B1B;text-transform:uppercase;font-weight:700;letter-spacing:0.5px">Overdue</div>
+        <div style="font-family:var(--ff-d);font-size:22px;color:#991B1B;font-weight:700;margin-top:4px">₹<span id="billSumOverdue">0</span></div>
+        <div style="font-size:11px;color:#991B1B;margin-top:2px"><span id="billCountOverdue">0</span> · 30+ days late</div>
+      </div>
+    </div>
+
+    <!-- Per-doctor billing table -->
+    <div id="billingDoctorList" style="padding:14px 20px 20px 20px">
+      <div style="text-align:center;color:var(--navy-m);font-size:13px;padding:14px">Loading billing data...</div>
+    </div>
+  </div>
+
   <div class="admin-grid">
     <!-- LEFT COLUMN -->
     <div style="display:flex;flex-direction:column;gap:20px">
@@ -370,7 +415,29 @@
 
 </div><!-- /authedContent -->
 
-<script src="app.js?v=41"></script>
+<!-- ── BILLING: Generate Invoice Modal ── -->
+<div id="genInvoiceModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:9999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:white;border-radius:var(--r-xl);max-width:480px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-family:var(--ff-d);font-weight:700;color:var(--navy);font-size:18px">🧾 Generate Invoice</div>
+      <button onclick="closeGenInvoiceModal()" style="background:none;border:none;font-size:22px;color:var(--navy-m);cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+    <div style="padding:20px 22px" id="genInvoiceBody"></div>
+  </div>
+</div>
+
+<!-- ── BILLING: Mark Paid Modal ── -->
+<div id="markPaidModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:9999;align-items:center;justify-content:center;padding:20px">
+  <div style="background:white;border-radius:var(--r-xl);max-width:440px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:#ECFDF5">
+      <div style="font-family:var(--ff-d);font-weight:700;color:#065F46;font-size:18px">✓ Mark Invoice as Paid</div>
+      <button onclick="closeMarkPaidModal()" style="background:none;border:none;font-size:22px;color:#065F46;cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+    <div style="padding:20px 22px" id="markPaidBody"></div>
+  </div>
+</div>
+
+<script src="app.js?v=54"></script>
 <script>
   const d = new Date();
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];

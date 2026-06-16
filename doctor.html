@@ -119,6 +119,7 @@
       <button class="sb-link" onclick="showSection('patients',this)"><span class="sb-link-icon">👥</span> Patient Records</button>
       <button class="sb-link" onclick="showSection('earnings',this)"><span class="sb-link-icon">💰</span> Earnings</button>
       <button class="sb-link" onclick="showSection('notes',this)"><span class="sb-link-icon">📝</span> My Notes</button>
+      <button class="sb-link" onclick="showSection('billing',this)"><span class="sb-link-icon">💳</span> My Billing</button>
       <a href="index.html" class="sb-link" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px"><span class="sb-link-icon">🏥</span> Public Site</a>
       <a href="admin.html" class="sb-link" id="sidebarAdminLink" style="display:none"><span class="sb-link-icon">📊</span> Admin Panel</a>
       <button class="sb-link signout-link" onclick="doAdminLogout()"><span class="sb-link-icon">🚪</span> Sign Out</button>
@@ -483,6 +484,13 @@
       </div>
     </div>
 
+    <!-- BILLING SECTION (private to doctor) -->
+    <div id="section-billing" style="display:none">
+      <div style="max-width:880px" id="doctorBillingWrap">
+        <div style="padding:32px;text-align:center;color:var(--navy-m)">Loading billing information…</div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -591,7 +599,7 @@
   </div>
 </div>
 
-<script src="app.js?v=47"></script>
+<script src="app.js?v=54"></script>
 <script>
   // Set today's date
   const d = new Date();
@@ -626,7 +634,7 @@
   });
 
   function showSection(id, btn) {
-    ['today','prescription','schedule','patients','earnings','notes'].forEach(s => {
+    ['today','prescription','schedule','patients','earnings','notes','billing'].forEach(s => {
       document.getElementById('section-'+s).style.display = 'none';
     });
     document.getElementById('section-'+id).style.display = 'block';
@@ -646,6 +654,10 @@
     // Load private notes when entering notes tab
     if (id === 'notes' && typeof window.loadMyNotes === 'function') {
       window.loadMyNotes();
+    }
+    // Load billing when entering billing tab
+    if (id === 'billing' && typeof window.loadDoctorBilling === 'function') {
+      window.loadDoctorBilling();
     }
   }
 
