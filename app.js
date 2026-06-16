@@ -1634,14 +1634,55 @@ const BILLING_RATES = {
   commission:   { percent: 10,   label: "10% per Booking" }
 };
 
-// ADMIN's payment receiving details — shown on invoices for doctors to pay you
-const BILLING_PAYMENT_INFO = {
-  upiId:     "kannan@upi",              // <-- ADMIN: edit to your real UPI ID
+// ADMIN's payment receiving details — shown on invoices for doctors to pay you.
+// These are the DEFAULT values. They get overridden at runtime by what's stored
+// in Firestore at `settings/billing` (admin can edit via the admin panel).
+let BILLING_PAYMENT_INFO = {
+  upiId:     "kannan@upi",
   accountHolder: "HealthFirst",
-  bankName:  "[Your Bank Name]",         // <-- ADMIN: edit before going live
-  accountNo: "[Your Account Number]",    // <-- ADMIN: edit before going live
-  ifsc:      "[Your IFSC]",              // <-- ADMIN: edit before going live
+  bankName:  "[Your Bank Name]",
+  accountNo: "[Your Account Number]",
+  ifsc:      "[Your IFSC]",
   contactEmail: "hello@healthfirst.in"
+};
+
+// Load admin-configured payment info from Firestore (runs early on every page).
+// Falls back to the hardcoded defaults above if Firestore doc doesn't exist.
+async function _loadBillingSettings() {
+  if (!firebaseReady) return;
+  try {
+    const { doc, getDoc } = window._fs;
+    const snap = await getDoc(doc(db, "settings", "billing"));
+    if (snap.exists()) {
+      BILLING_PAYMENT_INFO = { ...BILLING_PAYMENT_INFO, ...snap.data() };
+    }
+  } catch (e) { console.warn("Billing settings load:", e); }
+}
+
+// Admin saves new settings to Firestore + updates local cache
+window.saveBillingSettings = async function () {
+  const fields = ['upiId', 'accountHolder', 'bankName', 'accountNo', 'ifsc', 'contactEmail'];
+  const data = {};
+  for (const f of fields) {
+    const el = document.getElementById('bs_' + f);
+    if (el) data[f] = (el.value || "").trim();
+  }
+  if (!data.upiId) { alert("UPI ID is required."); return; }
+
+  const btn = document.getElementById('bsSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = "Saving..."; }
+
+  try {
+    const { doc, setDoc, serverTimestamp } = window._fs;
+    await setDoc(doc(db, "settings", "billing"), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+    BILLING_PAYMENT_INFO = { ...BILLING_PAYMENT_INFO, ...data };
+    if (btn) { btn.disabled = false; btn.textContent = "✓ Saved"; setTimeout(() => { btn.textContent = "💾 Save Payment Details"; }, 2000); }
+    // Re-render billing so any visible amounts pick up updated contactEmail etc.
+    if (typeof window.renderAdminBilling === 'function') window.renderAdminBilling();
+  } catch (e) {
+    alert("❌ Could not save: " + e.message + "\n\nMake sure the firestore.rules includes the /settings/{settingId} rule.");
+    if (btn) { btn.disabled = false; btn.textContent = "💾 Save Payment Details"; }
+  }
 };
 
 // ── Helper: format YYYY-MM into "June 2026"
@@ -1743,6 +1784,49 @@ window.renderAdminBilling = async function () {
   const list = document.getElementById("billingDoctorList");
   if (!list) return;
   list.innerHTML = `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:14px">Loading…</div>`;
+
+  // Load latest billing settings from Firestore so PDFs use the right UPI/bank info
+  await _loadBillingSettings();
+
+  // Render the admin settings form (collapsible) at top of list
+  const settingsHTML = `
+    <details style="margin-bottom:14px;background:#FEF9F0;border:1px solid #F5E8C5;border-radius:var(--r);overflow:hidden">
+      <summary style="cursor:pointer;padding:12px 16px;font-weight:700;color:#92400E;font-size:13px;display:flex;justify-content:space-between;align-items:center;list-style:none">
+        <span>⚙️ Payment Receiving Details <span style="font-weight:500;color:var(--navy-m);font-size:12px;margin-left:6px">(shown on every invoice)</span></span>
+        <span style="font-size:11px;color:var(--navy-m);font-weight:500">Click to edit ▾</span>
+      </summary>
+      <div style="padding:14px 16px;border-top:1px solid #F5E8C5">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="grid-column:1/-1">
+            <label style="display:block;font-size:11px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">UPI ID *</label>
+            <input id="bs_upiId" type="text" value="${escapeHtml(BILLING_PAYMENT_INFO.upiId || '')}" placeholder="yourname@bank" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:6px;font-family:'Courier New',monospace;font-size:13px;background:white;outline:none">
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Account Holder</label>
+            <input id="bs_accountHolder" type="text" value="${escapeHtml(BILLING_PAYMENT_INFO.accountHolder || '')}" placeholder="HealthFirst" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:6px;font-family:var(--ff);font-size:13px;background:white;outline:none">
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Bank Name</label>
+            <input id="bs_bankName" type="text" value="${escapeHtml(BILLING_PAYMENT_INFO.bankName || '')}" placeholder="SBI / HDFC / etc." style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:6px;font-family:var(--ff);font-size:13px;background:white;outline:none">
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Account Number</label>
+            <input id="bs_accountNo" type="text" value="${escapeHtml(BILLING_PAYMENT_INFO.accountNo || '')}" placeholder="XXXXXXXX1234" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:6px;font-family:'Courier New',monospace;font-size:13px;background:white;outline:none">
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">IFSC Code</label>
+            <input id="bs_ifsc" type="text" value="${escapeHtml(BILLING_PAYMENT_INFO.ifsc || '')}" placeholder="SBIN0001234" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:6px;font-family:'Courier New',monospace;font-size:13px;background:white;outline:none">
+          </div>
+          <div style="grid-column:1/-1">
+            <label style="display:block;font-size:11px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Contact Email for Payment Queries</label>
+            <input id="bs_contactEmail" type="email" value="${escapeHtml(BILLING_PAYMENT_INFO.contactEmail || '')}" placeholder="hello@healthfirst.in" style="width:100%;padding:8px 10px;border:1.5px solid var(--border-md);border-radius:6px;font-family:var(--ff);font-size:13px;background:white;outline:none">
+          </div>
+        </div>
+        <button id="bsSaveBtn" onclick="saveBillingSettings()" style="margin-top:12px;width:100%;padding:10px;background:var(--teal);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-family:var(--ff);font-size:13px">💾 Save Payment Details</button>
+        <div style="margin-top:8px;font-size:11px;color:var(--navy-m);text-align:center">Saved once — appears on all future invoices automatically</div>
+      </div>
+    </details>
+  `;
 
   const doctors = window._allDoctors || (await loadDoctors());
   const invoices = await _loadInvoices();
@@ -1883,7 +1967,7 @@ window.renderAdminBilling = async function () {
     `;
   }).filter(Boolean).join("");
 
-  list.innerHTML = rows || `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:24px">No doctors match the current filter.</div>`;
+  list.innerHTML = settingsHTML + (rows || `<div style="text-align:center;color:var(--navy-m);font-size:13px;padding:24px">No doctors match the current filter.</div>`);
 
   // Cache for downstream operations
   window._allInvoices = invoices;
@@ -2115,6 +2199,8 @@ window.generateAllMonthlyInvoices = async function () {
 
 // ── Invoice PDF (opens print-ready view in new window)
 window.downloadInvoicePDF = async function (invoiceId) {
+  // Make sure we have the latest payment details
+  await _loadBillingSettings();
   const inv = (window._allInvoices || []).find(i => i.id === invoiceId);
   if (!inv) { alert("Invoice not found."); return; }
 
@@ -2127,7 +2213,7 @@ window.downloadInvoicePDF = async function (invoiceId) {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${inv.id}</title>
 <style>
 @page { size: A4; margin: 14mm; }
-body { font-family: Georgia, serif; color: #1F2F26; padding: 20px; background: white; margin: 0; }
+body { font-family: Georgia, serif; color: #1F2F26; padding: 70px 20px 20px 20px; background: white; margin: 0; }
 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #3D5A4C; padding-bottom: 18px; margin-bottom: 24px; }
 .brand-name { font-size: 28px; font-weight: 800; color: #3D5A4C; letter-spacing: -0.5px; }
 .brand-sub { font-size: 12px; color: #888; margin-top: 4px; }
@@ -2150,7 +2236,7 @@ body { font-family: Georgia, serif; color: #1F2F26; padding: 20px; background: w
 .paid-stamp { position: absolute; top: 220px; right: 80px; transform: rotate(-12deg); border: 4px solid #065F46; color: #065F46; font-family: 'Georgia', serif; font-size: 40px; font-weight: 800; padding: 8px 24px; border-radius: 8px; opacity: 0.7; }
 .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #DDE5DB; font-size: 11px; color: #888; display: flex; justify-content: space-between; }
 @media print { body { padding: 0; } .print-toolbar { display: none; } }
-.print-toolbar { position: fixed; top: 12px; right: 12px; }
+.print-toolbar { position: fixed; top: 12px; right: 12px; z-index: 1000; }
 .print-toolbar button { padding: 9px 18px; background: #3D5A4C; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 700; }
 </style></head><body>
 ${isPaid ? '<div class="paid-stamp">PAID ✓</div>' : ''}
@@ -2269,6 +2355,8 @@ window.loadDoctorBilling = async function () {
   }
 
   wrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--navy-m)">Loading your billing…</div>`;
+  // Load latest settings so doctor sees current UPI/bank info
+  await _loadBillingSettings();
   const invoices = await _loadInvoices(me.email.toLowerCase());
 
   // Compute statuses
