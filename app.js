@@ -312,14 +312,14 @@ async function initFirebase() {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
     const { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, setDoc, query, orderBy, where, serverTimestamp } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-    const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } =
+    const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, RecaptchaVerifier, signInWithPhoneNumber } =
       await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     const auth = getAuth(app);
     firebaseReady = true;
     window._fs = { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, setDoc, query, orderBy, where, serverTimestamp };
-    window._auth = { auth, signInWithEmailAndPassword, signOut, sendPasswordResetEmail };
+    window._auth = { auth, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, RecaptchaVerifier, signInWithPhoneNumber };
     console.log("✅ Firebase connected");
     document.dispatchEvent(new Event("firebase-ready"));
 
@@ -337,8 +337,11 @@ initFirebase();
 async function handleAuthStateChange(user) {
   window._currentUser = user;
 
+  // Detect patient sessions (phone-auth users) for pages without an auth gate
+  if (typeof _detectPatientFromAuth === 'function') _detectPatientFromAuth(user);
+
   const gate = document.getElementById("authGate");
-  if (!gate) return; // page doesn't need auth
+  if (!gate) return; // page doesn't need auth (e.g., my-appointments)
 
   // ── If URL has ?signout=1, force a sign-out so login screen shows ──
   const urlParams = new URLSearchParams(window.location.search);
@@ -2663,6 +2666,430 @@ window.showAdminSection = function (id, btn) {
     window._currentPreviewKey = null;
   }
 };
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PATIENT OTP LOGIN — Firebase Phone Auth (cross-device bookings access)
+
+   Flow:
+     1. Patient enters phone → reCAPTCHA verified → Firebase sends SMS
+     2. Patient enters 6-digit OTP → verified → Firebase Auth session created
+     3. window._currentPatient is populated; UI updates
+     4. Bookings WHERE phone == their number become visible from any device
+
+   Note: Admins/doctors use email+password; patients use phone-only.
+   The two co-exist in Firebase Auth (distinguished by phoneNumber vs email).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+window._currentPatient = null; // populated on successful sign-in
+let _patientRecaptchaVerifier = null;
+let _patientConfirmation = null; // confirmation object returned by Firebase
+let _patientPendingPhone = null; // E.164 phone, for resend
+
+// Normalize a phone string to 10 digits (e.g., "+91 98765 43210" → "9876543210")
+function _normalizePhoneDigits(raw) {
+  if (!raw) return '';
+  const digits = String(raw).replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+// On Firebase auth state change, detect patient sessions (vs admin/doctor)
+function _detectPatientFromAuth(user) {
+  if (!user) { window._currentPatient = null; _refreshPatientUI(); return; }
+  // Patients have phoneNumber but no email; admins/doctors have email
+  if (user.phoneNumber && !user.email) {
+    window._currentPatient = {
+      uid: user.uid,
+      phone: user.phoneNumber,                       // "+919876543210"
+      phoneDigits: _normalizePhoneDigits(user.phoneNumber), // "9876543210"
+      name: localStorage.getItem('hf_patient_name') || ''
+    };
+    // Try to enrich with patient doc (name) — non-blocking
+    _loadOrCreatePatientDoc(user.uid, user.phoneNumber).catch(() => {});
+  } else {
+    window._currentPatient = null;
+  }
+  _refreshPatientUI();
+}
+
+// Create or load the patient's Firestore doc for storing name + preferences
+async function _loadOrCreatePatientDoc(uid, phoneE164) {
+  if (!firebaseReady) return;
+  try {
+    const { doc, getDoc, setDoc, serverTimestamp } = window._fs;
+    const ref = doc(db, "patients", uid);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.name && window._currentPatient) {
+        window._currentPatient.name = data.name;
+        try { localStorage.setItem('hf_patient_name', data.name); } catch (e) {}
+      }
+      // Refresh UI with the name
+      _refreshPatientUI();
+      // Update lastSignIn (don't await — fire and forget)
+      setDoc(ref, { lastSignIn: serverTimestamp() }, { merge: true }).catch(() => {});
+    } else {
+      await setDoc(ref, {
+        phone: phoneE164,
+        createdAt: serverTimestamp(),
+        lastSignIn: serverTimestamp()
+      });
+    }
+  } catch (e) {
+    console.warn("Patient doc load/create:", e);
+  }
+}
+
+// ── Inject and open the patient sign-in modal (works on any page) ──
+window.openPatientSignIn = function () {
+  // If already signed in, prompt sign out
+  if (window._currentPatient) {
+    if (confirm(`You're already signed in as ${window._currentPatient.phone}. Sign out?`)) {
+      window.signOutPatient();
+    }
+    return;
+  }
+
+  // If admin/doctor is signed in (has email), warn that signing in as patient will sign them out
+  const auth = window._auth?.auth;
+  if (auth?.currentUser && auth.currentUser.email) {
+    if (!confirm(`You're signed in as a doctor/admin (${auth.currentUser.email}).\n\nSigning in as a patient will sign you out of your doctor account. Continue?`)) {
+      return;
+    }
+    // Sign out first, then proceed
+    window._auth.signOut(auth).then(() => setTimeout(window.openPatientSignIn, 200));
+    return;
+  }
+
+  // Inject modal if not present
+  if (!document.getElementById('patientSignInModal')) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = _patientModalHTML();
+    document.body.appendChild(wrap.firstElementChild);
+    // Also inject the invisible reCAPTCHA container
+    if (!document.getElementById('patientRecaptchaContainer')) {
+      const r = document.createElement('div');
+      r.id = 'patientRecaptchaContainer';
+      r.style.cssText = 'position:fixed;bottom:0;right:0;z-index:-1';
+      document.body.appendChild(r);
+    }
+  }
+
+  // Reset modal state
+  _showPatientStep('phone');
+  const phoneInput = document.getElementById('patPhoneInput');
+  if (phoneInput) { phoneInput.value = ''; setTimeout(() => phoneInput.focus(), 80); }
+  document.getElementById('patientSignInModal').style.display = 'flex';
+};
+
+window.closePatientSignIn = function () {
+  const modal = document.getElementById('patientSignInModal');
+  if (modal) modal.style.display = 'none';
+  // Reset recaptcha if it was created — required so the next sign-in attempt works
+  if (_patientRecaptchaVerifier) {
+    try { _patientRecaptchaVerifier.clear(); } catch (e) {}
+    _patientRecaptchaVerifier = null;
+  }
+  _patientConfirmation = null;
+};
+
+function _showPatientStep(step) {
+  ['phone', 'otp', 'name', 'success'].forEach(s => {
+    const el = document.getElementById('patStep-' + s);
+    if (el) el.style.display = (s === step) ? 'block' : 'none';
+  });
+  const err = document.getElementById('patError');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+}
+
+function _showPatientError(msg) {
+  const err = document.getElementById('patError');
+  if (err) { err.textContent = msg; err.style.display = 'block'; }
+}
+
+// ── Step 1: Send OTP ──
+window.sendPatientOTP = async function () {
+  const phoneInput = document.getElementById('patPhoneInput');
+  const sendBtn = document.getElementById('patSendBtn');
+  const raw = (phoneInput?.value || '').trim();
+  const digits = _normalizePhoneDigits(raw);
+
+  if (digits.length !== 10) {
+    _showPatientError('Please enter a valid 10-digit Indian mobile number.');
+    return;
+  }
+  if (!firebaseReady || !window._auth) {
+    _showPatientError('Still connecting — try again in a moment.');
+    return;
+  }
+
+  const phoneE164 = '+91' + digits;
+  _patientPendingPhone = phoneE164;
+
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending OTP…'; }
+
+  try {
+    // (Re)create reCAPTCHA verifier
+    if (_patientRecaptchaVerifier) {
+      try { _patientRecaptchaVerifier.clear(); } catch (e) {}
+    }
+    _patientRecaptchaVerifier = new window._auth.RecaptchaVerifier(
+      window._auth.auth,
+      'patientRecaptchaContainer',
+      { size: 'invisible' }
+    );
+
+    _patientConfirmation = await window._auth.signInWithPhoneNumber(
+      window._auth.auth,
+      phoneE164,
+      _patientRecaptchaVerifier
+    );
+
+    // Show OTP step
+    _showPatientStep('otp');
+    document.getElementById('patPhoneDisplay').textContent = phoneE164;
+    setTimeout(() => document.getElementById('patOtpInput')?.focus(), 80);
+  } catch (e) {
+    console.error('Send OTP:', e);
+    let msg;
+    if (e.code === 'auth/invalid-phone-number') {
+      msg = 'That phone number format isn\'t valid. Make sure it\'s a 10-digit Indian number.';
+    } else if (e.code === 'auth/too-many-requests') {
+      msg = 'Too many OTP requests from this device. Wait a few minutes and try again.';
+    } else if (e.code === 'auth/operation-not-allowed') {
+      msg = 'Phone sign-in isn\'t enabled yet. Admin needs to enable it in Firebase Console.';
+    } else if (e.code === 'auth/quota-exceeded') {
+      msg = 'Daily SMS quota reached. Try again tomorrow, or contact support.';
+    } else if (e.code === 'auth/billing-not-enabled') {
+      msg = 'SMS requires a Firebase billing account. Contact support.';
+    } else if (e.message && e.message.includes('reCAPTCHA')) {
+      msg = 'reCAPTCHA failed. Refresh the page and try again.';
+    } else {
+      msg = 'Could not send OTP: ' + (e.message || 'unknown error');
+    }
+    _showPatientError(msg);
+  } finally {
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send OTP'; }
+  }
+};
+
+// ── Step 2: Verify OTP ──
+window.verifyPatientOTP = async function () {
+  const otpInput = document.getElementById('patOtpInput');
+  const verifyBtn = document.getElementById('patVerifyBtn');
+  const code = (otpInput?.value || '').trim();
+
+  if (!/^\d{6}$/.test(code)) {
+    _showPatientError('Enter the 6-digit code from your SMS.');
+    return;
+  }
+  if (!_patientConfirmation) {
+    _showPatientError('Session expired. Please go back and request OTP again.');
+    return;
+  }
+
+  if (verifyBtn) { verifyBtn.disabled = true; verifyBtn.textContent = 'Verifying…'; }
+
+  try {
+    const result = await _patientConfirmation.confirm(code);
+    // result.user.uid, result.user.phoneNumber now available
+    // _detectPatientFromAuth will run automatically via the listener and populate window._currentPatient
+
+    // If first-time sign-in, ask for name (skippable)
+    const { doc, getDoc } = window._fs;
+    const snap = await getDoc(doc(db, "patients", result.user.uid));
+    const hasName = snap.exists() && snap.data().name;
+
+    if (!hasName) {
+      _showPatientStep('name');
+      setTimeout(() => document.getElementById('patNameInput')?.focus(), 80);
+    } else {
+      _showSuccessAndClose();
+    }
+  } catch (e) {
+    console.error('Verify OTP:', e);
+    let msg;
+    if (e.code === 'auth/invalid-verification-code') {
+      msg = 'Wrong OTP. Check your SMS and try again.';
+    } else if (e.code === 'auth/code-expired') {
+      msg = 'OTP expired (codes last ~5 minutes). Go back and request a new one.';
+    } else {
+      msg = 'Verification failed: ' + (e.message || 'unknown error');
+    }
+    _showPatientError(msg);
+  } finally {
+    if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify'; }
+  }
+};
+
+// ── Step 3: Save name (optional) ──
+window.savePatientName = async function (skip) {
+  const auth = window._auth?.auth;
+  if (!auth?.currentUser) { _showSuccessAndClose(); return; }
+  const nameInput = document.getElementById('patNameInput');
+  const name = skip ? '' : (nameInput?.value || '').trim();
+
+  if (!skip && name.length < 2) {
+    _showPatientError('Please enter your name (or click Skip).');
+    return;
+  }
+
+  try {
+    if (name) {
+      const { doc, setDoc, serverTimestamp } = window._fs;
+      await setDoc(doc(db, "patients", auth.currentUser.uid), {
+        name,
+        phone: auth.currentUser.phoneNumber,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      try { localStorage.setItem('hf_patient_name', name); } catch (e) {}
+      if (window._currentPatient) window._currentPatient.name = name;
+    }
+    _showSuccessAndClose();
+  } catch (e) {
+    _showPatientError('Could not save name: ' + e.message);
+  }
+};
+
+function _showSuccessAndClose() {
+  _showPatientStep('success');
+  // Refresh UI immediately and again after a delay (let auth listener fire)
+  _refreshPatientUI();
+  setTimeout(() => {
+    _refreshPatientUI();
+    // Auto-close after 1.5s
+    setTimeout(window.closePatientSignIn, 1500);
+    // Reload patient bookings if on my-appointments page
+    if (typeof window.loadPatientBookings === 'function') {
+      window.loadPatientBookings();
+    }
+  }, 200);
+}
+
+// ── Sign out ──
+window.signOutPatient = async function () {
+  if (!window._auth?.auth?.currentUser) return;
+  try {
+    await window._auth.signOut(window._auth.auth);
+    window._currentPatient = null;
+    try { localStorage.removeItem('hf_patient_name'); } catch (e) {}
+    _refreshPatientUI();
+    if (typeof window.loadPatientBookings === 'function') {
+      window.loadPatientBookings();
+    }
+  } catch (e) { console.error('Sign out:', e); }
+};
+
+// ── Update any "Sign In / Profile" UI elements on the page ──
+function _refreshPatientUI() {
+  // Pill indicator in nav (if present)
+  const navPill = document.getElementById('patientNavPill');
+  if (navPill) {
+    if (window._currentPatient) {
+      const displayName = window._currentPatient.name || window._currentPatient.phone;
+      navPill.innerHTML = `<span title="${escapeHtml(window._currentPatient.phone)}">👤 ${escapeHtml(displayName.length > 12 ? displayName.substring(0, 12) + '…' : displayName)}</span>`;
+      navPill.onclick = window.signOutPatient;
+      navPill.title = 'Click to sign out';
+      navPill.style.background = 'var(--teal-l)';
+      navPill.style.color = 'var(--teal-d)';
+    } else {
+      navPill.innerHTML = '🔐 Sign In';
+      navPill.onclick = window.openPatientSignIn;
+      navPill.title = 'Sign in to view bookings on any device';
+      navPill.style.background = '';
+      navPill.style.color = '';
+    }
+  }
+
+  // Profile card on my-appointments page (if present)
+  const profileCard = document.getElementById('patientProfileCard');
+  const signInPrompt = document.getElementById('patientSignInPrompt');
+  if (profileCard && signInPrompt) {
+    if (window._currentPatient) {
+      profileCard.style.display = 'block';
+      signInPrompt.style.display = 'none';
+      const nameEl = document.getElementById('patientProfileName');
+      const phoneEl = document.getElementById('patientProfilePhone');
+      if (nameEl) nameEl.textContent = window._currentPatient.name || 'Welcome back';
+      if (phoneEl) phoneEl.textContent = window._currentPatient.phone;
+    } else {
+      profileCard.style.display = 'none';
+      signInPrompt.style.display = 'block';
+    }
+  }
+
+  // On book.html: optional auto-fill if signed in
+  if (window._currentPatient) {
+    const pName = document.getElementById('pName');
+    const pPhone = document.getElementById('pPhone');
+    if (pName && !pName.value && window._currentPatient.name) pName.value = window._currentPatient.name;
+    if (pPhone && !pPhone.value) pPhone.value = window._currentPatient.phoneDigits;
+  }
+}
+
+// HTML for the patient sign-in modal (injected on first open)
+function _patientModalHTML() {
+  return `
+<div id="patientSignInModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:9999;align-items:center;justify-content:center;padding:20px;font-family:var(--ff)" onclick="if(event.target===this)closePatientSignIn()">
+  <div style="background:white;border-radius:var(--r-xl);max-width:440px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)" onclick="event.stopPropagation()">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--teal-l)">
+      <div style="font-family:var(--ff-d);font-weight:700;color:var(--navy);font-size:18px">📱 Sign In to HealthFirst</div>
+      <button onclick="closePatientSignIn()" style="background:none;border:none;font-size:22px;color:var(--navy-m);cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+    <div style="padding:22px">
+      <div id="patError" style="display:none;background:#FEE2E2;color:#991B1B;font-size:13px;padding:10px 14px;border-radius:var(--r);margin-bottom:14px;border-left:3px solid #DC2626"></div>
+
+      <!-- STEP 1: Phone -->
+      <div id="patStep-phone">
+        <p style="font-size:14px;color:var(--navy-s);line-height:1.6;margin-bottom:18px">Sign in with your phone number to see your bookings on any device. We'll send a 6-digit verification code via SMS.</p>
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Phone Number</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="padding:12px 14px;background:var(--bg);border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;font-weight:700;color:var(--navy)">🇮🇳 +91</span>
+            <input id="patPhoneInput" type="tel" maxlength="10" autocomplete="tel" inputmode="numeric" placeholder="9876543210" style="flex:1;padding:12px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:16px;background:white;outline:none;letter-spacing:0.5px" onkeypress="if(event.key==='Enter')sendPatientOTP()">
+          </div>
+        </div>
+        <button id="patSendBtn" onclick="sendPatientOTP()" style="width:100%;padding:13px;background:var(--teal);color:white;border:none;border-radius:var(--r);font-family:var(--ff);font-weight:700;font-size:15px;cursor:pointer">Send OTP</button>
+        <div style="text-align:center;margin-top:16px;font-size:12px;color:var(--navy-m);line-height:1.5">By signing in you agree to our <a href="terms.html" style="color:var(--teal);font-weight:600">Terms</a> and <a href="privacy.html" style="color:var(--teal);font-weight:600">Privacy Policy</a>.</div>
+      </div>
+
+      <!-- STEP 2: OTP -->
+      <div id="patStep-otp" style="display:none">
+        <p style="font-size:14px;color:var(--navy-s);line-height:1.6;margin-bottom:18px">We sent a 6-digit code to <strong id="patPhoneDisplay" style="color:var(--teal-d)"></strong>. Check your SMS and enter it below.</p>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--navy-s);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">6-Digit Code</label>
+          <input id="patOtpInput" type="text" maxlength="6" autocomplete="one-time-code" inputmode="numeric" pattern="\\d{6}" placeholder="123456" style="width:100%;padding:14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:24px;font-weight:700;text-align:center;letter-spacing:8px;background:white;outline:none" onkeypress="if(event.key==='Enter')verifyPatientOTP()">
+        </div>
+        <button id="patVerifyBtn" onclick="verifyPatientOTP()" style="width:100%;padding:13px;background:var(--teal);color:white;border:none;border-radius:var(--r);font-family:var(--ff);font-weight:700;font-size:15px;cursor:pointer">Verify</button>
+        <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:13px">
+          <button onclick="_showPatientStep('phone')" style="background:none;border:none;color:var(--navy-m);cursor:pointer;font-family:var(--ff);font-size:13px;text-decoration:underline">← Change phone</button>
+          <button onclick="sendPatientOTP()" style="background:none;border:none;color:var(--teal);cursor:pointer;font-family:var(--ff);font-size:13px;font-weight:600">Resend OTP</button>
+        </div>
+      </div>
+
+      <!-- STEP 3: Name (first-time only) -->
+      <div id="patStep-name" style="display:none">
+        <div style="text-align:center;margin-bottom:18px">
+          <div style="font-size:48px;margin-bottom:8px">👋</div>
+          <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);margin-bottom:6px">Welcome to HealthFirst!</div>
+          <p style="font-size:13px;color:var(--navy-m);line-height:1.5">What's your name? (so doctors know who they're seeing — optional)</p>
+        </div>
+        <input id="patNameInput" type="text" placeholder="Your full name" autocomplete="name" style="width:100%;padding:13px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:15px;background:white;outline:none;margin-bottom:12px" onkeypress="if(event.key==='Enter')savePatientName(false)">
+        <button onclick="savePatientName(false)" style="width:100%;padding:13px;background:var(--teal);color:white;border:none;border-radius:var(--r);font-family:var(--ff);font-weight:700;font-size:15px;cursor:pointer;margin-bottom:8px">Save & Continue</button>
+        <button onclick="savePatientName(true)" style="width:100%;padding:11px;background:var(--bg);color:var(--navy-m);border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-weight:600;font-size:13px;cursor:pointer">Skip for now</button>
+      </div>
+
+      <!-- STEP 4: Success -->
+      <div id="patStep-success" style="display:none;text-align:center;padding:18px 0">
+        <div style="font-size:54px;margin-bottom:10px">✅</div>
+        <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);margin-bottom:8px">You're signed in!</div>
+        <p style="font-size:14px;color:var(--navy-m);line-height:1.6">You'll now see all your bookings on any device. We'll close this window in a moment.</p>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    DATA EXPORT MODULE — preview-then-download + multi-sheet Excel
@@ -6202,6 +6629,11 @@ if (document.getElementById("myAppointmentsList")) {
   document.addEventListener("firebase-ready", initMyAppointments);
   if (firebaseReady) initMyAppointments();
 
+  // Re-load bookings when patient signs in/out — exposed globally
+  window.loadPatientBookings = function () {
+    initMyAppointments();
+  };
+
   async function initMyAppointments() {
     const list = document.getElementById("myAppointmentsList");
     const empty = document.getElementById("myAppointmentsEmpty");
@@ -6236,7 +6668,6 @@ if (document.getElementById("myAppointmentsList")) {
           try { localStorage.setItem("hf_my_bookings", JSON.stringify(saved.slice(0, 50))); } catch (e) {}
         }
       } else {
-        // Token in URL is invalid or expired
         list.innerHTML = `
           <div style="text-align:center;padding:40px 24px;background:white;border-radius:var(--r-xl);border:1px solid var(--border)">
             <div style="font-size:48px;margin-bottom:14px">⚠️</div>
@@ -6246,13 +6677,50 @@ if (document.getElementById("myAppointmentsList")) {
       }
     }
 
-    // 4. Try to fetch fresh data for each saved booking (so status reflects updates)
+    // 4. Try to fetch fresh data for each saved booking
     bookings = await Promise.all(saved.map(async (s) => {
       const fresh = await loadPublicBooking(s.lookupToken);
       return fresh ? { ...s, ...fresh } : s;
     }));
 
-    // Render
+    // 5. If patient is signed in, ALSO fetch server-side bookings matching their phone
+    if (window._currentPatient && window._currentPatient.phoneDigits) {
+      try {
+        const { collection, query, where, getDocs } = window._fs;
+        const q = query(
+          collection(db, "bookings"),
+          where("phone", "==", window._currentPatient.phoneDigits)
+        );
+        const snap = await getDocs(q);
+        const serverBookings = [];
+        snap.forEach(d => serverBookings.push({ bookingId: d.id, ...d.data() }));
+
+        // Merge: dedupe by lookupToken if matching, otherwise by (date+slot+doctor)
+        serverBookings.forEach(sb => {
+          const tokenMatch = bookings.find(b => b.lookupToken && b.lookupToken === sb.lookupToken);
+          const fingerprintMatch = bookings.find(b => b.date === sb.date && b.slot === sb.slot && b.doctor === sb.doctor);
+          if (tokenMatch || fingerprintMatch) return; // already have it
+          bookings.push({
+            lookupToken: sb.lookupToken || '',
+            bookingId: sb.bookingId,
+            doctor: sb.doctor,
+            doctorId: sb.doctorId,
+            specialty: sb.specialty,
+            date: sb.date,
+            dateDisplay: sb.dateDisplay || sb.date,
+            slot: sb.slot,
+            token: sb.token,
+            fee: sb.fee,
+            status: sb.status,
+            _fromServer: true
+          });
+        });
+      } catch (e) {
+        console.warn("Could not load server-side bookings:", e);
+      }
+    }
+
+    // 6. Render
     if (bookings.length === 0) {
       if (empty) empty.style.display = "";
       list.style.display = "none";
@@ -6261,7 +6729,7 @@ if (document.getElementById("myAppointmentsList")) {
     if (empty) empty.style.display = "none";
     list.style.display = "";
 
-    // Sort by date (upcoming first, then past)
+    // Sort: upcoming first (ascending), then past (descending)
     const today = new Date().toISOString().split("T")[0];
     bookings.sort((a, b) => {
       const aDate = a.date || "";
@@ -6278,12 +6746,13 @@ if (document.getElementById("myAppointmentsList")) {
       const statusColor = status === "cancelled" ? "var(--red)" : (status === "done" ? "var(--navy-m)" : "var(--green)");
       const statusLabel = status === "cancelled" ? "Cancelled" : (status === "done" ? "Completed" : (isUpcoming ? "Upcoming" : "Past"));
       const canModify = isUpcoming && status === "confirmed";
+      const serverBadge = b._fromServer ? '<span style="background:var(--teal-l);color:var(--teal-d);font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;margin-left:6px">☁️ SIGNED-IN</span>' : '';
 
       return `
         <div style="background:white;border-radius:var(--r-xl);padding:24px;border:1px solid var(--border);margin-bottom:16px;${status === "cancelled" ? "opacity:0.7" : ""}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">
             <div>
-              <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${escapeHtml(b.doctor || "—")}</div>
+              <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${escapeHtml(b.doctor || "—")}${serverBadge}</div>
               <div style="font-size:14px;color:var(--teal);font-weight:600;margin-top:3px">${escapeHtml(b.specialty || "")}</div>
             </div>
             <span style="background:${statusColor};color:white;padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap">${statusLabel}</span>
@@ -6299,8 +6768,8 @@ if (document.getElementById("myAppointmentsList")) {
               <button onclick="rescheduleBooking('${b.lookupToken}','${b.bookingId || ""}','${b.doctorId || ""}')" class="btn-primary" style="font-size:12px;padding:7px 14px">🔄 Reschedule</button>
               <button onclick="cancelMyBooking('${b.lookupToken}','${b.bookingId || ""}')" style="font-size:12px;padding:7px 14px;background:white;color:var(--red);border:1.5px solid var(--red);border-radius:var(--r);font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
             ` : ""}
-            <button onclick="copyMyApptLink('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px">🔗 Copy link</button>
-            <button onclick="removeMyAppt('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px;color:var(--navy-m)">🗑 Remove from device</button>
+            ${b.lookupToken ? `<button onclick="copyMyApptLink('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px">🔗 Copy link</button>` : ''}
+            ${!b._fromServer ? `<button onclick="removeMyAppt('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px;color:var(--navy-m)">🗑 Remove from device</button>` : ''}
           </div>
         </div>`;
     }).join("");
