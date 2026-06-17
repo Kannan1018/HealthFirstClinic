@@ -2636,6 +2636,302 @@ window.loadDoctorBilling = async function () {
   // Cache for PDF generation
   window._allInvoices = invoices;
 };
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DATA EXPORT MODULE — CSV downloads + full JSON backup for admin
+   Top-level (works on any page where admin export buttons are present).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// Escape a value for CSV — wraps in quotes if it contains a comma/quote/newline
+function _csvEscape(val) {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  if (/[",\n\r]/.test(str)) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+// Convert a 2D array of rows into a CSV string + trigger download
+// Uses UTF-8 BOM so Excel reads ₹ and Indian characters correctly
+function _downloadCSV(filename, rows) {
+  const csv = rows.map(r => r.map(_csvEscape).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function _downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Format any Firestore Timestamp / Date / string consistently for CSV
+function _csvDate(value) {
+  if (!value) return '';
+  try {
+    const d = value.toDate ? value.toDate() : (value instanceof Date ? value : new Date(value));
+    if (isNaN(d.getTime())) return String(value);
+    return d.toISOString().replace('T', ' ').substring(0, 19);
+  } catch (e) { return String(value); }
+}
+
+// Fetch all docs from a collection
+async function _fetchAllDocs(collectionName) {
+  if (!firebaseReady) throw new Error("Firebase not connected yet");
+  const { collection, getDocs } = window._fs;
+  const snap = await getDocs(collection(db, collectionName));
+  const list = [];
+  snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+  return list;
+}
+
+// Loading state wrapper for export buttons
+async function _withExportLoading(btnId, label, fn) {
+  const btn = document.getElementById(btnId);
+  const originalHTML = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = `<div style="font-size:22px;margin-bottom:4px">⏳</div><div style="font-weight:700;font-size:13px">Exporting…</div><div style="font-size:11px;color:var(--navy-m);margin-top:2px">${label}</div>`; }
+  try {
+    await fn();
+  } catch (e) {
+    console.error(`Export ${label}:`, e);
+    alert(`❌ Export failed: ${e.message || e}\n\nMake sure you're signed in as admin and Firestore rules allow access.`);
+  } finally {
+    if (btn && originalHTML) { btn.disabled = false; btn.innerHTML = originalHTML; }
+  }
+}
+
+function _todayFilenameStamp() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ── DOCTORS export ──
+window.exportDoctorsCSV = async function () {
+  await _withExportLoading('expDoctorsBtn', 'All doctor profiles', async () => {
+    const doctors = await _fetchAllDocs('doctors');
+    if (doctors.length === 0) { alert("No doctors to export yet."); return; }
+    const rows = [[
+      'ID', 'Name', 'Email', 'Phone', 'Specialty', 'Qualification',
+      'Fee (Rs)', 'Years Experience', 'City', 'State', 'Languages',
+      'Pricing Plan', 'Available', 'About', 'Photo URL'
+    ]];
+    doctors.forEach(d => {
+      rows.push([
+        d.id,
+        d.name || '',
+        d.email || '',
+        d.phone || '',
+        d.specialty || '',
+        d.qualification || '',
+        d.fee || '',
+        d.experience || '',
+        d.city || '',
+        d.state || '',
+        Array.isArray(d.languages) ? d.languages.join('; ') : (d.languages || ''),
+        d.pricingModel === 'commission' ? '10% per booking' : 'Rs 2,000/mo subscription',
+        d.available === false ? 'OFFLINE' : 'ACTIVE',
+        d.about || '',
+        d.photoUrl ? '[image data url]' : ''
+      ]);
+    });
+    _downloadCSV(`healthfirst-doctors-${_todayFilenameStamp()}.csv`, rows);
+  });
+};
+
+// ── BOOKINGS export ──
+window.exportBookingsCSV = async function () {
+  await _withExportLoading('expBookingsBtn', 'All appointments', async () => {
+    const bookings = await _fetchAllDocs('bookings');
+    if (bookings.length === 0) { alert("No bookings to export yet."); return; }
+    bookings.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const rows = [[
+      'Booking ID', 'Token', 'Patient Name', 'Phone', 'Age', 'Gender',
+      'Doctor', 'Doctor Email', 'Date', 'Slot', 'Status',
+      'Fee (Rs)', 'Reason for Visit', 'Payment Status', 'Payment ID',
+      'Created At', 'Cancelled At', 'Marked Done At'
+    ]];
+    bookings.forEach(b => {
+      rows.push([
+        b.id,
+        b.token || '',
+        b.patientName || '',
+        b.phone || '',
+        b.age || '',
+        b.gender || '',
+        b.doctor || '',
+        b.doctorEmail || '',
+        b.date || '',
+        b.slot || '',
+        b.status || '',
+        b.fee || '',
+        b.reason || '',
+        b.paymentStatus || '',
+        b.paymentId || '',
+        _csvDate(b.createdAt),
+        _csvDate(b.cancelledAt),
+        _csvDate(b.doneAt)
+      ]);
+    });
+    _downloadCSV(`healthfirst-bookings-${_todayFilenameStamp()}.csv`, rows);
+  });
+};
+
+// ── APPLICATIONS export ──
+window.exportApplicationsCSV = async function () {
+  await _withExportLoading('expAppsBtn', 'Doctor sign-ups', async () => {
+    const apps = await _fetchAllDocs('doctorApplications');
+    if (apps.length === 0) { alert("No applications to export yet."); return; }
+    apps.sort((a, b) => {
+      const ad = a.submittedAt?.toDate ? a.submittedAt.toDate() : new Date(0);
+      const bd = b.submittedAt?.toDate ? b.submittedAt.toDate() : new Date(0);
+      return bd - ad;
+    });
+    const rows = [[
+      'ID', 'Status', 'Name', 'Email', 'Phone', 'Specialty', 'Qualification',
+      'Years Experience', 'Fee', 'City', 'State', 'Languages',
+      'Pricing Plan', 'About', 'Submitted At', 'Reviewed At'
+    ]];
+    apps.forEach(a => {
+      rows.push([
+        a.id,
+        a.status || 'pending',
+        a.name || '',
+        a.email || '',
+        a.phone || '',
+        a.specialty || '',
+        a.qualification || '',
+        a.experience || '',
+        a.fee || '',
+        a.city || '',
+        a.state || '',
+        Array.isArray(a.languages) ? a.languages.join('; ') : (a.languages || ''),
+        a.pricingModel || 'subscription',
+        a.about || '',
+        _csvDate(a.submittedAt),
+        _csvDate(a.reviewedAt)
+      ]);
+    });
+    _downloadCSV(`healthfirst-applications-${_todayFilenameStamp()}.csv`, rows);
+  });
+};
+
+// ── INVOICES export ──
+window.exportInvoicesCSV = async function () {
+  await _withExportLoading('expInvoicesBtn', 'Billing records', async () => {
+    const invoices = await _fetchAllDocs('invoices');
+    if (invoices.length === 0) { alert("No invoices to export yet.\n\nGenerate some via the Billing panel first."); return; }
+    invoices.sort((a, b) => (b.periodMonth || '').localeCompare(a.periodMonth || ''));
+    const rows = [[
+      'Invoice ID', 'Doctor Name', 'Doctor Email', 'Plan', 'Period',
+      'Amount (Rs)', 'Booking Count', 'Booking Revenue (Rs)',
+      'Status', 'Generated At', 'Due Date', 'Paid At',
+      'Payment Method', 'Payment Reference', 'Notes'
+    ]];
+    invoices.forEach(i => {
+      rows.push([
+        i.id,
+        i.doctorName || '',
+        i.doctorEmail || '',
+        i.plan === 'commission' ? '10% per booking' : 'Rs 2,000/mo subscription',
+        i.periodMonth || '',
+        i.amount || 0,
+        i.bookingCount || 0,
+        i.bookingRevenue || 0,
+        (i.status || 'pending').toUpperCase(),
+        _csvDate(i.generatedAt),
+        i.dueDate || '',
+        _csvDate(i.paidAt),
+        i.paymentMethod || '',
+        i.paymentReference || '',
+        i.notes || ''
+      ]);
+    });
+    _downloadCSV(`healthfirst-invoices-${_todayFilenameStamp()}.csv`, rows);
+  });
+};
+
+// ── REVIEWS export ──
+window.exportReviewsCSV = async function () {
+  await _withExportLoading('expReviewsBtn', 'Patient ratings', async () => {
+    const reviews = await _fetchAllDocs('reviews');
+    if (reviews.length === 0) { alert("No reviews to export yet."); return; }
+    reviews.sort((a, b) => {
+      const ad = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+      const bd = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+      return bd - ad;
+    });
+    const rows = [[
+      'ID', 'Doctor', 'Patient Name', 'Patient Phone', 'Rating',
+      'Comment', 'Created At', 'Booking ID'
+    ]];
+    reviews.forEach(r => {
+      rows.push([
+        r.id,
+        r.doctor || '',
+        r.patientName || '',
+        r.phone || '',
+        r.rating || '',
+        r.comment || '',
+        _csvDate(r.createdAt),
+        r.bookingId || ''
+      ]);
+    });
+    _downloadCSV(`healthfirst-reviews-${_todayFilenameStamp()}.csv`, rows);
+  });
+};
+
+// ── FULL JSON BACKUP — all collections in one file ──
+window.exportFullBackupJSON = async function () {
+  if (!confirm("Download a full backup of ALL HealthFirst data?\n\nThis includes doctors, bookings, applications, invoices, reviews, schedules, prescriptions, and settings.\n\nKeep this file safe — it's your disaster recovery copy.")) return;
+
+  await _withExportLoading('expFullBtn', 'Everything as JSON', async () => {
+    const collections = [
+      'doctors', 'bookings', 'doctorApplications', 'invoices',
+      'reviews', 'doctorSchedules', 'prescriptions', 'doctorNotes',
+      'bookedSlots', 'publicBookings', 'settings'
+    ];
+    const backup = {
+      _meta: {
+        platform: 'HealthFirst',
+        backupVersion: 1,
+        exportedAt: new Date().toISOString(),
+        exportedBy: (window._currentDoctor?.email || 'unknown'),
+        totalCollections: collections.length
+      }
+    };
+
+    let totalDocs = 0;
+    for (const coll of collections) {
+      try {
+        const docs = await _fetchAllDocs(coll);
+        backup[coll] = docs;
+        totalDocs += docs.length;
+      } catch (e) {
+        console.warn(`Skipped ${coll}:`, e.message);
+        backup[coll] = { _error: e.message };
+      }
+    }
+    backup._meta.totalDocuments = totalDocs;
+
+    _downloadJSON(`healthfirst-FULL-BACKUP-${_todayFilenameStamp()}.json`, backup);
+    alert(`✅ Full backup downloaded — ${totalDocs} records across ${collections.length} collections.\n\nSave this file to Google Drive or your laptop for safekeeping.`);
+  });
+};
+
 if (document.getElementById("queue-upcoming")) {
   document.addEventListener("doctor-ready", loadTodayQueue);
 
