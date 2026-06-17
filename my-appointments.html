@@ -76,8 +76,8 @@
     <button onclick="signOutPatient()" style="background:rgba(255,255,255,0.18);border:1.5px solid rgba(255,255,255,0.3);color:white;font-family:var(--ff);font-weight:600;font-size:13px;padding:10px 20px;border-radius:24px;cursor:pointer;white-space:nowrap;position:relative;z-index:1;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">🚪 Sign Out</button>
   </div>
 
-  <!-- ── STATS SUMMARY (shown when there are bookings) ── -->
-  <div id="apptStatsRow" style="display:none;gap:14px;margin-bottom:24px">
+  <!-- ── STATS SUMMARY (shown when there are bookings and signed in) ── -->
+  <div id="apptStatsRow" style="display:none;gap:14px;margin-bottom:20px">
     <div style="flex:1;background:white;border-radius:var(--r-lg);padding:18px 20px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,0.04)">
       <div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:1px;margin-bottom:6px">📅 Upcoming</div>
       <div style="font-family:var(--ff-d);font-size:32px;font-weight:700;color:var(--teal-d);line-height:1" id="statsUpcoming">0</div>
@@ -93,12 +93,12 @@
   </div>
 
   <!-- ── BOOK NEW BUTTON ── -->
-  <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+  <div id="bookingsHeader" style="margin-bottom:18px;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;display:none">
     <div>
-      <div style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy)">Your Bookings</div>
+      <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy)">Your Bookings</div>
       <div style="font-size:13px;color:var(--navy-m);margin-top:2px" id="bookingsSourceLabel">From this device</div>
     </div>
-    <a href="book.html" class="btn-primary" style="font-size:14px;padding:11px 22px">+ Book New Appointment</a>
+    <a href="book.html" class="btn-primary" style="font-size:13px;padding:10px 20px">+ Book New Appointment</a>
   </div>
 
   <!-- Bookings list -->
@@ -175,6 +175,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=62"></script>
+<script src="app.js?v=63"></script>
 </body>
 </html>
