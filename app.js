@@ -443,6 +443,9 @@ async function handleAuthStateChange(user) {
   }
 }
 
+// Tracks consecutive failed login attempts in this browser session
+let _failedLoginAttempts = 0;
+
 window.doAdminLogin = async function () {
   const email = document.getElementById("loginEmail")?.value.trim();
   const password = document.getElementById("loginPassword")?.value;
@@ -460,21 +463,54 @@ window.doAdminLogin = async function () {
   if (btn) { btn.disabled = true; btn.textContent = "Signing in..."; }
   try {
     await window._auth.signInWithEmailAndPassword(window._auth.auth, email, password);
+    _failedLoginAttempts = 0; // Reset counter on success
+    // hide any nudge we previously showed
+    const nudge = document.getElementById("loginNudge");
+    if (nudge) nudge.style.display = "none";
     // success path handled by handleAuthStateChange
   } catch (e) {
     console.error("Login error:", e);
+    if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
+      _failedLoginAttempts += 1;
+    }
     if (errEl) {
       if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
         errEl.textContent = "Wrong email or password. Please try again.";
       } else if (e.code === "auth/too-many-requests") {
-        errEl.textContent = "Too many failed attempts. Try again in a few minutes.";
+        errEl.textContent = "Too many failed attempts. Try again in a few minutes, or use Forgot Password below.";
       } else {
         errEl.textContent = "Sign-in failed: " + (e.message || "unknown error");
       }
     }
+    // After 2 failed attempts → show a prominent "Forgot password?" nudge
+    if (_failedLoginAttempts >= 2) {
+      _showForgotPasswordNudge();
+    }
     if (btn) { btn.disabled = false; btn.textContent = "Sign In"; }
   }
 };
+
+// Inject a prominent "trouble signing in?" callout above the small Forgot Password link
+function _showForgotPasswordNudge() {
+  // Only inject once
+  if (document.getElementById("loginNudge")) {
+    document.getElementById("loginNudge").style.display = "block";
+    return;
+  }
+  const forgotLink = document.querySelector('a.auth-back[href*="doForgotPassword"]');
+  if (!forgotLink) return;
+  const nudge = document.createElement("div");
+  nudge.id = "loginNudge";
+  nudge.style.cssText = "background:#FEF3C7;border:1.5px solid #F59E0B;border-radius:10px;padding:12px 14px;margin-top:12px;font-size:13px;color:#78350F;line-height:1.5";
+  nudge.innerHTML = `
+    <div style="font-weight:700;margin-bottom:4px">🤔 Trouble signing in?</div>
+    <div style="margin-bottom:8px;font-size:12px">Maybe you forgot your password. Click below to get a secure reset link sent to your email.</div>
+    <button onclick="doForgotPassword()" style="width:100%;padding:9px;background:#F59E0B;color:white;border:none;border-radius:6px;font-family:var(--ff);font-weight:700;font-size:13px;cursor:pointer">🔑 Send Me a Reset Link</button>
+  `;
+  forgotLink.parentNode.insertBefore(nudge, forgotLink);
+  // Hide the now-redundant small link below
+  forgotLink.style.display = "none";
+}
 
 window.doAdminLogout = async function () {
   if (!confirm("Sign out of admin?")) return;
@@ -486,22 +522,121 @@ window.doAdminLogout = async function () {
   location.reload();
 };
 
-window.doForgotPassword = async function () {
-  const email = (document.getElementById("loginEmail")?.value || "").trim();
-  if (!email) {
-    const promptEmail = prompt("Enter your email to receive a password reset link:");
-    if (!promptEmail) return;
-    return doForgotPasswordWith(promptEmail);
+window.doForgotPassword = function () {
+  // Open the modal; pre-fill from sign-in field if user already typed an email
+  const modal = document.getElementById("forgotPasswordModal");
+  if (!modal) {
+    // Modal not present on this page → fall back to the old prompt flow
+    const email = prompt("Enter your email to receive a password reset link:");
+    if (!email) return;
+    return doForgotPasswordWith(email);
   }
-  return doForgotPasswordWith(email);
+  // Reset modal state
+  document.getElementById("fpStep1").style.display = "block";
+  document.getElementById("fpStep2").style.display = "none";
+  document.getElementById("fpError").style.display = "none";
+  document.getElementById("fpError").textContent = "";
+
+  // Pre-fill email if user already typed it in the sign-in form
+  const loginEmail = (document.getElementById("loginEmail")?.value || "").trim();
+  const emailInput = document.getElementById("fpEmail");
+  emailInput.value = loginEmail;
+  // Reset submit button
+  const submitBtn = document.getElementById("fpSubmitBtn");
+  submitBtn.disabled = false;
+  submitBtn.textContent = "Send Reset Link";
+
+  modal.style.display = "flex";
+  // Auto-focus the email field
+  setTimeout(() => emailInput.focus(), 50);
 };
 
+window.closeForgotPasswordModal = function () {
+  const modal = document.getElementById("forgotPasswordModal");
+  if (modal) modal.style.display = "none";
+};
+
+// Close forgot-password modal on Escape key
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") {
+    const modal = document.getElementById("forgotPasswordModal");
+    if (modal && modal.style.display === "flex") {
+      window.closeForgotPasswordModal();
+    }
+  }
+});
+
+window.submitForgotPassword = async function () {
+  const emailInput = document.getElementById("fpEmail");
+  const errorEl = document.getElementById("fpError");
+  const submitBtn = document.getElementById("fpSubmitBtn");
+  const email = (emailInput.value || "").trim();
+
+  // Hide previous errors
+  errorEl.style.display = "none";
+
+  // Validation
+  if (!email) {
+    errorEl.textContent = "Please enter your email address.";
+    errorEl.style.display = "block";
+    emailInput.focus();
+    return;
+  }
+  if (!email.includes("@") || !email.includes(".")) {
+    errorEl.textContent = "That doesn't look like a valid email. Please check and try again.";
+    errorEl.style.display = "block";
+    emailInput.focus();
+    return;
+  }
+  if (!window._auth) {
+    errorEl.textContent = "Still connecting to our servers — please try again in a moment.";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  // Show loading state
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Sending…";
+
+  try {
+    // After resetting, send them back to the doctor sign-in page on our site
+    const actionCodeSettings = {
+      url: window.location.origin + window.location.pathname.replace(/[^/]*$/, "") + "doctor.html",
+      handleCodeInApp: false
+    };
+    await window._auth.sendPasswordResetEmail(window._auth.auth, email, actionCodeSettings);
+    // Show success step
+    document.getElementById("fpStep1").style.display = "none";
+    document.getElementById("fpStep2").style.display = "block";
+    document.getElementById("fpSentTo").textContent = email;
+  } catch (e) {
+    console.error("Reset error:", e);
+    let msg;
+    if (e.code === "auth/user-not-found") {
+      msg = "No account found with this email. Double-check the spelling, or contact your admin if you think this is a mistake.";
+    } else if (e.code === "auth/invalid-email") {
+      msg = "That email format isn't valid. Please check and try again.";
+    } else if (e.code === "auth/too-many-requests") {
+      msg = "Too many attempts. Please wait a few minutes before trying again.";
+    } else if (e.code === "auth/network-request-failed") {
+      msg = "Network error. Please check your internet connection and try again.";
+    } else {
+      msg = "Could not send reset email: " + (e.message || "unknown error");
+    }
+    errorEl.textContent = msg;
+    errorEl.style.display = "block";
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Send Reset Link";
+  }
+};
+
+// Legacy function kept for backwards compatibility (other callers)
 async function doForgotPasswordWith(email) {
   if (!window._auth) { alert("Connecting... try again in a moment."); return; }
   if (!email.includes("@")) { alert("Please enter a valid email."); return; }
   try {
     await window._auth.sendPasswordResetEmail(window._auth.auth, email);
-    alert(`✅ Password reset email sent to ${email}.\n\nCheck your inbox (and spam folder) for the reset link. Click the link to set a new password, then come back here to sign in.`);
+    alert(`✅ Password reset email sent to ${email}.\n\nCheck your inbox (and spam folder) for the reset link.`);
   } catch (e) {
     console.error("Reset error:", e);
     if (e.code === "auth/user-not-found") {
@@ -5179,7 +5314,10 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
           <div class="ai-detail">${escapeHtml(d.specialty)} · ${escapeHtml(d.qualification||"")} · ₹${escapeHtml(d.fee)}${d.city ? " · " + escapeHtml(d.city) : ""}</div>
           <div class="ai-detail" style="margin-top:3px;font-size:11px">${d.email ? "🔑 " + escapeHtml(d.email) : "<span style='color:var(--amber)'>⚠️ No login email — add one</span>"}</div>
         </div>
-        <button class="ai-btn cancel" onclick="removeDoctorAdmin('${d.id}','${escapeHtml(d.name).replace(/'/g, "\\'")}')">Remove</button>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          ${d.email ? `<button class="ai-btn" style="background:var(--teal-l);color:var(--teal-d);border:1px solid var(--teal);font-size:11px;padding:5px 10px;font-weight:700;white-space:nowrap" onclick="adminResetDoctorPassword('${escapeHtml(d.email).replace(/'/g, "\\'")}','${escapeHtml(d.name).replace(/'/g, "\\'")}')">🔑 Reset Password</button>` : ""}
+          <button class="ai-btn cancel" onclick="removeDoctorAdmin('${d.id}','${escapeHtml(d.name).replace(/'/g, "\\'")}')">Remove</button>
+        </div>
       </div>`).join("");
   };
 
@@ -5407,6 +5545,34 @@ if (document.getElementById("recentBookingsTable") || document.getElementById("d
     if (!confirm(`Remove ${name} from HealthFirst?\n\nTheir profile will no longer be visible to patients. Past bookings stay intact.`)) return;
     await deleteDoctor(id);
     loadAdminData();
+  };
+
+  // Admin-initiated password reset — sends a Firebase reset email to the doctor.
+  // This scales to any number of doctors with zero ongoing admin work per request.
+  window.adminResetDoctorPassword = async function (email, name) {
+    if (!email) { alert("This doctor has no email on file. Edit their record to add one first."); return; }
+    if (!confirm(`Send a password reset link to ${name}?\n\n📧 ${email}\n\nThey'll receive an email immediately with a secure link to set a new password. The link expires in 1 hour.`)) return;
+    if (!window._auth) { alert("Not connected to Firebase Auth yet — wait a moment and try again."); return; }
+    try {
+      // Send reset, redirect doctor back to doctor.html after they set the new password
+      const baseUrl = window.location.origin + window.location.pathname.replace(/[^/]*$/, "");
+      await window._auth.sendPasswordResetEmail(window._auth.auth, email, {
+        url: baseUrl + "doctor.html",
+        handleCodeInApp: false
+      });
+      alert(`✅ Password reset email sent to ${email}\n\nLet ${name} know to check their inbox (and spam folder). The link expires in 1 hour.`);
+    } catch (e) {
+      console.error("Admin password reset:", e);
+      if (e.code === "auth/user-not-found") {
+        alert(`⚠️ No Firebase Auth account exists yet for ${email}.\n\nThis means the doctor was added to Firestore but their login account wasn't created in Firebase Auth.\n\nFix: Go to Firebase Console → Authentication → Users → "Add user" → enter ${email} and a temporary password.`);
+      } else if (e.code === "auth/invalid-email") {
+        alert("That email format isn't valid in Firebase Auth. Check the doctor's email field.");
+      } else if (e.code === "auth/too-many-requests") {
+        alert("Too many reset requests for this account recently. Wait 15 minutes and try again.");
+      } else {
+        alert("Could not send reset email: " + (e.message || "unknown error"));
+      }
+    }
   };
 }
 
