@@ -2709,6 +2709,10 @@ function _detectPatientFromAuth(user) {
     window._currentPatient = null;
   }
   _refreshPatientUI();
+  // If on my-appointments page, reload bookings list when sign-in state changes
+  if (typeof window.loadPatientBookings === 'function') {
+    window.loadPatientBookings();
+  }
 }
 
 // Create or load the patient's Firestore doc for storing name + preferences
@@ -6637,7 +6641,20 @@ if (document.getElementById("myAppointmentsList")) {
   async function initMyAppointments() {
     const list = document.getElementById("myAppointmentsList");
     const empty = document.getElementById("myAppointmentsEmpty");
+    const statsRow = document.getElementById("apptStatsRow");
+    const bookingsHeader = document.getElementById("bookingsHeader");
     if (!list) return;
+
+    // ─── If NOT signed in: hide everything booking-related ───
+    // Privacy: someone else might be using this device. Only show bookings
+    // after they sign in with their phone number.
+    if (!window._currentPatient) {
+      list.style.display = "none";
+      if (empty) empty.style.display = "none";
+      if (statsRow) statsRow.style.display = "none";
+      if (bookingsHeader) bookingsHeader.style.display = "none";
+      return;
+    }
 
     // 1. Check URL for ?t=<lookupToken>
     const urlToken = getParam("t");
@@ -6676,6 +6693,9 @@ if (document.getElementById("myAppointmentsList")) {
           </div>`;
       }
     }
+
+    // Show the bookings header now that we're signed in
+    if (bookingsHeader) bookingsHeader.style.display = "flex";
 
     // 4. Try to fetch fresh data for each saved booking
     bookings = await Promise.all(saved.map(async (s) => {
@@ -6746,7 +6766,6 @@ if (document.getElementById("myAppointmentsList")) {
     if (bookings.length === 0) {
       if (empty) empty.style.display = "";
       list.style.display = "none";
-      const statsRow = document.getElementById("apptStatsRow");
       if (statsRow) statsRow.style.display = 'none';
       return;
     }
@@ -6765,7 +6784,6 @@ if (document.getElementById("myAppointmentsList")) {
     });
 
     // Calculate and show stats summary
-    const statsRow = document.getElementById("apptStatsRow");
     if (statsRow) {
       const upcoming = bookings.filter(b => (b.date || '') >= today && b.status !== 'cancelled' && b.status !== 'done').length;
       const completed = bookings.filter(b => b.status === 'done' || ((b.date || '') < today && b.status === 'confirmed')).length;
@@ -6787,52 +6805,41 @@ if (document.getElementById("myAppointmentsList")) {
         ? { bg: '#E0E7FF', color: '#3730A3', label: 'COMPLETED', icon: '✓' }
         : { bg: '#D1FAE5', color: '#065F46', label: 'UPCOMING', icon: '📅' };
       const canModify = isUpcoming && status === "confirmed";
-      const cardBorder = canModify ? 'border-left:4px solid var(--teal)' : (isCancelled ? 'border-left:4px solid #DC2626' : 'border-left:4px solid var(--navy-h)');
-      // Get specialty icon based on name
+      const borderColor = canModify ? 'var(--teal)' : (isCancelled ? '#DC2626' : 'var(--navy-h)');
       const specIcons = { 'Cardiologist': '❤️', 'Dermatologist': '🧴', 'Pediatrician': '👶', 'Orthopedic Surgeon': '🦴', 'Gynecologist': '👩', 'ENT Specialist': '👂', 'Ophthalmologist': '👁️', 'Dentist': '🦷', 'Psychiatrist': '🧠', 'General Physician': '🩺' };
       const specIcon = specIcons[b.specialty] || '👨‍⚕️';
 
       return `
-        <div style="background:white;border-radius:var(--r-xl);padding:0;border:1px solid var(--border);margin-bottom:16px;${cardBorder};box-shadow:0 2px 8px rgba(0,0,0,0.04);overflow:hidden;${isCancelled ? 'opacity:0.75' : ''};transition:transform 0.15s,box-shadow 0.15s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,0.08)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)'">
-          <div style="padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;border-bottom:1px solid var(--border)">
-            <div style="display:flex;gap:14px;align-items:center;flex:1;min-width:240px">
-              <div style="width:52px;height:52px;background:var(--teal-l);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">${specIcon}</div>
-              <div style="flex:1">
-                <div style="font-family:var(--ff-d);font-size:18px;font-weight:700;color:var(--navy);line-height:1.2;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="background:white;border-radius:var(--r-lg);padding:14px 18px;border:1px solid var(--border);border-left:3px solid ${borderColor};margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04);${isCancelled ? 'opacity:0.7;' : ''}transition:transform 0.15s,box-shadow 0.15s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 10px rgba(0,0,0,0.06)'" onmouseout="this.style.transform='';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.04)'">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:240px">
+              <div style="width:36px;height:36px;background:var(--teal-l);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${specIcon}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--ff-d);font-size:15px;font-weight:700;color:var(--navy);line-height:1.2;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                   ${escapeHtml(b.doctor || "—")}
-                  ${b._fromServer ? '<span style="background:var(--teal-l);color:var(--teal-d);font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;letter-spacing:0.5px">☁ SYNCED</span>' : ''}
+                  ${b._fromServer ? '<span style="background:var(--teal-l);color:var(--teal-d);font-size:9px;font-weight:700;padding:1px 6px;border-radius:6px;letter-spacing:0.3px">☁ SYNCED</span>' : ''}
                 </div>
-                <div style="font-size:13px;color:var(--teal-d);font-weight:600;margin-top:2px">${escapeHtml(b.specialty || "")}</div>
+                <div style="font-size:12px;color:var(--teal-d);font-weight:600;margin-top:1px">${escapeHtml(b.specialty || "")}</div>
               </div>
             </div>
-            <span style="background:${statusConfig.bg};color:${statusConfig.color};padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;letter-spacing:0.5px;white-space:nowrap;display:flex;align-items:center;gap:5px">${statusConfig.icon} ${statusConfig.label}</span>
+            <span style="background:${statusConfig.bg};color:${statusConfig.color};padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:0.3px;white-space:nowrap;flex-shrink:0">${statusConfig.icon} ${statusConfig.label}</span>
           </div>
-          <div style="padding:18px 24px;display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:14px;background:var(--bg)">
-            <div>
-              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">📅 Date</div>
-              <div style="font-size:14px;color:var(--navy);font-weight:600">${escapeHtml(b.dateDisplay || b.date || "—")}</div>
-            </div>
-            <div>
-              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">⏰ Time</div>
-              <div style="font-size:14px;color:var(--navy);font-weight:600">${escapeHtml(b.slot || "—")}</div>
-            </div>
-            <div>
-              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">🎫 Token</div>
-              <div style="font-size:14px;color:var(--navy);font-weight:600">#${escapeHtml(b.token || "—")}</div>
-            </div>
-            <div>
-              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">💰 Fee</div>
-              <div style="font-size:14px;color:var(--navy);font-weight:700">₹${escapeHtml(b.fee || "—")}</div>
-            </div>
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:13px;color:var(--navy-s);display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+            <span><strong style="color:var(--navy)">📅</strong> ${escapeHtml(b.dateDisplay || b.date || "—")}</span>
+            <span><strong style="color:var(--navy)">⏰</strong> ${escapeHtml(b.slot || "—")}</span>
+            <span><strong style="color:var(--navy)">🎫</strong> #${escapeHtml(b.token || "—")}</span>
+            <span><strong style="color:var(--navy)">💰</strong> ₹${escapeHtml(b.fee || "—")}</span>
           </div>
-          <div style="padding:14px 24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          ${(canModify || b.lookupToken) ? `
+          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
             ${canModify ? `
-              <button onclick="rescheduleBooking('${b.lookupToken}','${b.bookingId || ""}','${b.doctorId || ""}')" class="btn-primary" style="font-size:12px;padding:8px 16px">🔄 Reschedule</button>
-              <button onclick="cancelMyBooking('${b.lookupToken}','${b.bookingId || ""}')" style="font-size:12px;padding:8px 16px;background:white;color:var(--red);border:1.5px solid var(--red);border-radius:var(--r);font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
+              <button onclick="rescheduleBooking('${b.lookupToken}','${b.bookingId || ""}','${b.doctorId || ""}')" style="font-size:11px;padding:6px 12px;background:var(--teal);color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-family:var(--ff)">🔄 Reschedule</button>
+              <button onclick="cancelMyBooking('${b.lookupToken}','${b.bookingId || ""}')" style="font-size:11px;padding:6px 12px;background:white;color:var(--red);border:1px solid var(--red);border-radius:6px;font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
             ` : ""}
-            ${b.lookupToken ? `<button onclick="copyMyApptLink('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:8px 14px">🔗 Copy link</button>` : ''}
-            ${!b._fromServer && b.lookupToken ? `<button onclick="removeMyAppt('${b.lookupToken}')" style="font-size:12px;padding:8px 14px;background:none;border:none;color:var(--navy-m);cursor:pointer;font-family:var(--ff);margin-left:auto" title="Remove from this device only (does NOT cancel)">🗑 Hide from device</button>` : ''}
+            ${b.lookupToken ? `<button onclick="copyMyApptLink('${b.lookupToken}')" style="font-size:11px;padding:6px 12px;background:var(--bg);color:var(--navy);border:1px solid var(--border-md);border-radius:6px;font-weight:600;cursor:pointer;font-family:var(--ff)">🔗 Copy link</button>` : ''}
+            ${!b._fromServer && b.lookupToken ? `<button onclick="removeMyAppt('${b.lookupToken}')" style="font-size:11px;padding:6px 12px;background:none;border:none;color:var(--navy-m);cursor:pointer;font-family:var(--ff);margin-left:auto" title="Hide from this device (does NOT cancel)">🗑 Hide</button>` : ''}
           </div>
+          ` : ''}
         </div>`;
     }).join("");
   }
