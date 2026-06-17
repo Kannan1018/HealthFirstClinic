@@ -6,6 +6,8 @@
    ✅ Live ratings, feedback, slot availability
    ✅ Razorpay + Pay-at-clinic options
 ═══════════════════════════════════════════════ */
+console.log("✅ HealthFirst app.js v65 loaded — signed-in filter is ACTIVE");
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyBMHgnM0ThjDeOMmZAHuKOVjF14miU9Sgc",
@@ -6746,6 +6748,15 @@ if (document.getElementById("myAppointmentsList")) {
         sourceLabel.textContent = "From this device only · Sign in to see all bookings";
         sourceLabel.style.color = 'var(--navy-m)';
       }
+    }
+
+    // ─── FINAL DEFENSIVE FILTER ───
+    // No matter what happened above, if signed in, ONLY show bookings from Firestore.
+    // This is a belt-and-suspenders guarantee against stale localStorage bookings.
+    if (window._currentPatient) {
+      const beforeCount = bookings.length;
+      bookings = bookings.filter(b => b._fromServer === true);
+      console.log(`[my-appointments v65] Signed-in filter: ${beforeCount} → ${bookings.length} bookings (kept only _fromServer:true)`);
     }
 
     // 6. Render
