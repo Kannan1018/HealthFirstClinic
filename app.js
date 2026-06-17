@@ -6,7 +6,7 @@
    ✅ Live ratings, feedback, slot availability
    ✅ Razorpay + Pay-at-clinic options
 ═══════════════════════════════════════════════ */
-console.log("✅ HealthFirst app.js v65 loaded — signed-in filter is ACTIVE");
+console.log("✅ HealthFirst app.js v67 loaded — 4-hour modification cutoff is ACTIVE");
 
 
 const firebaseConfig = {
@@ -82,6 +82,27 @@ const ALL_SLOTS = [
 ];
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+/* ─── Platform rules ─── */
+// Patients cannot reschedule or cancel within this many hours of their appointment.
+// To change later, edit just this number.
+const HF_MODIFY_CUTOFF_HOURS = 4;
+
+// Returns hours remaining until the appointment start time. Returns Infinity for invalid data.
+// Negative values mean the appointment is in the past.
+function hoursUntilAppointment(booking) {
+  if (!booking || !booking.date || !booking.slot) return Infinity;
+  const m = String(booking.slot).match(/^(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return Infinity;
+  let h = parseInt(m[1]);
+  const min = parseInt(m[2]);
+  const isPM = m[3].toUpperCase() === "PM";
+  if (h === 12) h = isPM ? 12 : 0;
+  else if (isPM) h += 12;
+  const appt = new Date(booking.date + 'T00:00:00');
+  appt.setHours(h, min, 0, 0);
+  return (appt.getTime() - Date.now()) / 3600000; // milliseconds → hours
+}
 
 function defaultWeeklyPattern() {
   // Default: Mon-Sat with working hours; Sun off
@@ -3090,6 +3111,381 @@ function _patientModalHTML() {
         <div style="font-size:54px;margin-bottom:10px">✅</div>
         <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);margin-bottom:8px">You're signed in!</div>
         <p style="font-size:14px;color:var(--navy-m);line-height:1.6">You'll now see all your bookings on any device. We'll close this window in a moment.</p>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESCHEDULE MODULE — modal-based, in-place rescheduling for patients
+
+   How it works:
+     1. Patient clicks "Reschedule" on a booking card
+     2. Modal opens showing current appointment + new date picker + slot grid
+     3. Patient picks new date → modal fetches available slots for that doctor/date
+     4. Patient picks new slot → "Confirm Reschedule" enabled
+     5. On confirm: free old slot → reserve new slot → update booking → update publicBookings
+     6. Refresh UI; show success
+   ═══════════════════════════════════════════════════════════════════════ */
+
+window._rescheduleContext = null;
+// {
+//   lookupToken, bookingId, doctorId, doctorName, doctor (full obj), schedule,
+//   bookedSlotsByDate (map), originalDate, originalSlot, originalDateDisplay,
+//   newDate, newSlot
+// }
+
+window.openRescheduleModal = async function (lookupToken, bookingId, doctorId) {
+  if (!firebaseReady) { alert("Still connecting — try again in a moment."); return; }
+  if (!lookupToken || !bookingId) { alert("Missing booking details — cannot reschedule."); return; }
+
+  // Inject modal if not present
+  if (!document.getElementById('rescheduleModal')) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = _rescheduleModalHTML();
+    document.body.appendChild(wrap.firstElementChild);
+  }
+
+  const modal = document.getElementById('rescheduleModal');
+  modal.style.display = 'flex';
+
+  // Show loading state
+  document.getElementById('rsCurrentBooking').innerHTML = '<div style="text-align:center;padding:20px;color:var(--navy-m);font-size:13px">⏳ Loading booking details…</div>';
+  document.getElementById('rsDatePicker').innerHTML = '';
+  document.getElementById('rsSlotPicker').innerHTML = '';
+  document.getElementById('rsError').style.display = 'none';
+  const confirmBtn = document.getElementById('rsConfirmBtn');
+  if (confirmBtn) confirmBtn.disabled = true;
+
+  try {
+    // 1. Load the current booking (via publicBookings — patient-safe)
+    const currentBooking = await loadPublicBooking(lookupToken);
+    if (!currentBooking) throw new Error("Booking not found.");
+    if (currentBooking.status === 'cancelled') throw new Error("This booking is already cancelled.");
+    if (currentBooking.status === 'done') throw new Error("This appointment is already completed — can't reschedule.");
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    if ((currentBooking.date || '') < todayStr) throw new Error("Past appointments can't be rescheduled.");
+
+    // 4-hour cutoff check
+    const hoursLeft = hoursUntilAppointment(currentBooking);
+    if (hoursLeft < HF_MODIFY_CUTOFF_HOURS) {
+      throw new Error(`Your appointment is in ${Math.max(0, Math.round(hoursLeft * 10) / 10)} hours — within our ${HF_MODIFY_CUTOFF_HOURS}-hour cutoff. Please call the clinic directly to make changes.`);
+    }
+
+    // Use doctorId from booking if not passed
+    const docId = doctorId || currentBooking.doctorId;
+    if (!docId) throw new Error("Doctor info missing on booking. Contact support.");
+
+    // 2. Load full doctor profile
+    const { doc, getDoc } = window._fs;
+    const docSnap = await getDoc(doc(db, "doctors", docId));
+    if (!docSnap.exists()) throw new Error("Doctor not found — they may have left the platform.");
+    const doctor = { id: docSnap.id, ...docSnap.data() };
+
+    // 3. Load doctor's schedule
+    const schedule = await loadDoctorSchedule(docId);
+
+    // 4. Save context
+    window._rescheduleContext = {
+      lookupToken,
+      bookingId,
+      doctorId: docId,
+      doctorName: doctor.name,
+      doctor,
+      schedule,
+      bookedSlotsByDate: {},
+      originalDate: currentBooking.date,
+      originalSlot: currentBooking.slot,
+      originalDateDisplay: currentBooking.dateDisplay,
+      newDate: null,
+      newSlot: null
+    };
+
+    // 5. Render current booking summary
+    _renderRescheduleCurrent(currentBooking, doctor);
+
+    // 6. Render date picker
+    await _renderRescheduleDatePicker();
+  } catch (e) {
+    console.error('openRescheduleModal:', e);
+    document.getElementById('rsCurrentBooking').innerHTML = `<div style="background:#FEE2E2;color:#991B1B;padding:14px;border-radius:8px;font-size:13px">❌ ${escapeHtml(e.message || String(e))}</div>`;
+  }
+};
+
+window.closeRescheduleModal = function () {
+  const m = document.getElementById('rescheduleModal');
+  if (m) m.style.display = 'none';
+  window._rescheduleContext = null;
+};
+
+function _renderRescheduleCurrent(booking, doctor) {
+  const specIcons = { 'Cardiologist': '❤️', 'Dermatologist': '🧴', 'Pediatrician': '👶', 'Orthopedic Surgeon': '🦴', 'Gynecologist': '👩', 'ENT Specialist': '👂', 'Ophthalmologist': '👁️', 'Dentist': '🦷', 'Psychiatrist': '🧠', 'General Physician': '🩺' };
+  const icon = specIcons[doctor.specialty] || '👨‍⚕️';
+  document.getElementById('rsCurrentBooking').innerHTML = `
+    <div style="background:var(--bg);border:1.5px solid var(--border-md);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="width:44px;height:44px;background:var(--teal-l);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">${icon}</div>
+      <div style="flex:1;min-width:180px">
+        <div style="font-family:var(--ff-d);font-size:15px;font-weight:700;color:var(--navy);line-height:1.2">${escapeHtml(doctor.name)}</div>
+        <div style="font-size:12px;color:var(--teal-d);font-weight:600;margin-top:2px">${escapeHtml(doctor.specialty || '')}</div>
+        <div style="font-size:13px;color:var(--navy-s);margin-top:6px"><strong>Currently:</strong> ${escapeHtml(booking.dateDisplay || booking.date)} · ${escapeHtml(booking.slot)}</div>
+      </div>
+    </div>`;
+}
+
+async function _renderRescheduleDatePicker() {
+  const ctx = window._rescheduleContext;
+  if (!ctx) return;
+  const picker = document.getElementById('rsDatePicker');
+  if (!picker) return;
+
+  const horizon = ctx.schedule.bookingHorizonDays || 7;
+  const blockedDates = new Set(ctx.schedule.blockedDates || []);
+  const weeklyPattern = ctx.schedule.weeklyPattern || defaultWeeklyPattern();
+
+  // Build available dates (next N days, excluding off-days and blocked)
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dates = [];
+  for (let i = 0; i < horizon; i++) {
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const dateKey = d.toISOString().split('T')[0];
+    if (blockedDates.has(dateKey)) continue;
+    const dayOfWeek = String(d.getDay());
+    const dayData = weeklyPattern[dayOfWeek];
+    if (!dayData || dayData.isOff) continue;
+    const totalSlots = getActiveSlotsForDay(dayData);
+    if (totalSlots.length === 0) continue;
+    dates.push({ key: dateKey, day: d.getDate(), dayName: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()], month: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] });
+  }
+
+  if (dates.length === 0) {
+    picker.innerHTML = '<div style="padding:14px;background:#FEF3C7;color:#92400E;border-radius:8px;font-size:13px;text-align:center">No available dates in the next ' + horizon + ' days. Try contacting the clinic directly.</div>';
+    return;
+  }
+
+  picker.innerHTML = `
+    <div style="font-size:12px;color:var(--navy-m);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">📅 Pick a new date</div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch">
+      ${dates.map(d => `
+        <button onclick="selectRescheduleDate('${d.key}', this)" class="rs-date-chip" data-date="${d.key}" style="flex-shrink:0;background:white;border:1.5px solid var(--border-md);border-radius:10px;padding:10px 14px;cursor:pointer;font-family:var(--ff);min-width:72px;text-align:center;transition:all 0.15s">
+          <div style="font-size:10px;color:var(--navy-m);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">${d.dayName}</div>
+          <div style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy);line-height:1.1;margin:2px 0">${d.day}</div>
+          <div style="font-size:11px;color:var(--navy-m);font-weight:600">${d.month}</div>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+window.selectRescheduleDate = async function (dateKey, btnEl) {
+  const ctx = window._rescheduleContext;
+  if (!ctx) return;
+
+  // Update visual state
+  document.querySelectorAll('.rs-date-chip').forEach(b => {
+    b.style.background = 'white';
+    b.style.borderColor = 'var(--border-md)';
+    b.style.color = '';
+  });
+  if (btnEl) {
+    btnEl.style.background = 'var(--teal)';
+    btnEl.style.borderColor = 'var(--teal-d)';
+    // Make inner text white
+    btnEl.querySelectorAll('div').forEach(d => d.style.color = 'white');
+  }
+
+  ctx.newDate = dateKey;
+  ctx.newSlot = null;
+  document.getElementById('rsConfirmBtn').disabled = true;
+
+  // Compute and render available slots for this date
+  const picker = document.getElementById('rsSlotPicker');
+  picker.innerHTML = '<div style="padding:20px;text-align:center;color:var(--navy-m);font-size:13px">⏳ Checking slot availability…</div>';
+
+  try {
+    const d = new Date(dateKey + 'T00:00:00');
+    const dayOfWeek = String(d.getDay());
+    const dayData = ctx.schedule.weeklyPattern[dayOfWeek];
+    const allSlots = getActiveSlotsForDay(dayData);
+
+    // Get booked slots for that date (cached)
+    let bookedSet = ctx.bookedSlotsByDate[dateKey];
+    if (!bookedSet) {
+      const booked = await getBookedSlots(ctx.doctorName, dateKey);
+      bookedSet = new Set(booked);
+      ctx.bookedSlotsByDate[dateKey] = bookedSet;
+    }
+
+    // Filter out booked + past slots if date is today
+    const now = new Date();
+    const isToday = dateKey === now.toISOString().split('T')[0];
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    const available = allSlots.filter(s => {
+      if (bookedSet.has(s) && !(dateKey === ctx.originalDate && s === ctx.originalSlot)) return false; // exclude booked, but allow current slot
+      if (isToday && slotToMinutes(s) <= currentMins) return false;
+      return true;
+    });
+
+    if (available.length === 0) {
+      picker.innerHTML = '<div style="font-size:12px;color:var(--navy-m);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">⏰ Available slots</div><div style="padding:14px;background:#FEF3C7;color:#92400E;border-radius:8px;font-size:13px;text-align:center">No slots available on this date. Pick another date.</div>';
+      return;
+    }
+
+    picker.innerHTML = `
+      <div style="font-size:12px;color:var(--navy-m);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">⏰ Available slots</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${available.map(s => {
+          const isCurrent = dateKey === ctx.originalDate && s === ctx.originalSlot;
+          return `<button onclick="selectRescheduleSlot('${escapeHtml(s)}', this)" class="rs-slot-chip" ${isCurrent ? 'disabled' : ''} style="${isCurrent ? 'background:var(--bg);color:var(--navy-m);cursor:not-allowed;border:1.5px dashed var(--border-md);' : 'background:white;color:var(--navy);cursor:pointer;border:1.5px solid var(--border-md);'}padding:7px 12px;border-radius:8px;font-family:var(--ff);font-size:13px;font-weight:600;transition:all 0.15s" title="${isCurrent ? 'This is your current slot' : ''}">${escapeHtml(s)}${isCurrent ? ' (current)' : ''}</button>`;
+        }).join('')}
+      </div>
+    `;
+  } catch (e) {
+    console.error('selectRescheduleDate:', e);
+    picker.innerHTML = '<div style="padding:14px;background:#FEE2E2;color:#991B1B;border-radius:8px;font-size:13px">Could not load slots: ' + escapeHtml(e.message) + '</div>';
+  }
+};
+
+window.selectRescheduleSlot = function (slot, btnEl) {
+  const ctx = window._rescheduleContext;
+  if (!ctx) return;
+  if (slot === ctx.originalSlot && ctx.newDate === ctx.originalDate) return; // can't pick current
+
+  // Update visual state
+  document.querySelectorAll('.rs-slot-chip').forEach(b => {
+    if (b.disabled) return;
+    b.style.background = 'white';
+    b.style.color = 'var(--navy)';
+    b.style.borderColor = 'var(--border-md)';
+  });
+  if (btnEl) {
+    btnEl.style.background = 'var(--teal)';
+    btnEl.style.color = 'white';
+    btnEl.style.borderColor = 'var(--teal-d)';
+  }
+
+  ctx.newSlot = slot;
+  const confirmBtn = document.getElementById('rsConfirmBtn');
+  confirmBtn.disabled = false;
+  confirmBtn.innerHTML = '✓ Confirm Reschedule';
+  confirmBtn.style.opacity = '1';
+};
+
+window.confirmReschedule = async function () {
+  const ctx = window._rescheduleContext;
+  if (!ctx || !ctx.newDate || !ctx.newSlot) return;
+  if (ctx.newDate === ctx.originalDate && ctx.newSlot === ctx.originalSlot) {
+    _rescheduleError("You've picked the same slot you already have. Pick a different date or time.");
+    return;
+  }
+
+  const confirmBtn = document.getElementById('rsConfirmBtn');
+  const orig = confirmBtn.innerHTML;
+  confirmBtn.disabled = true;
+  confirmBtn.innerHTML = '⏳ Rescheduling…';
+  document.getElementById('rsError').style.display = 'none';
+
+  try {
+    const { collection, addDoc, updateDoc, doc, query, where, getDocs, serverTimestamp, setDoc } = window._fs;
+
+    // Compute dateDisplay for the new date
+    const dObj = new Date(ctx.newDate + 'T00:00:00');
+    const newDateDisplay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dObj.getDay()] + ', ' + dObj.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dObj.getMonth()];
+
+    // 1. Reserve the new slot FIRST (so if it gets taken by someone else, we fail safely)
+    const newDoctorDate = ctx.doctorName + '_' + ctx.newDate;
+    const newSlotRef = await addDoc(collection(db, "bookedSlots"), {
+      doctorDate: newDoctorDate,
+      slot: ctx.newSlot,
+      bookingId: ctx.bookingId,
+      lookupToken: ctx.lookupToken,
+      doctorEmail: ctx.doctor.email || "",
+      status: "confirmed",
+      createdAt: serverTimestamp(),
+      rescheduledFrom: ctx.originalDate + '@' + ctx.originalSlot
+    });
+
+    // 2. Update the booking with new date + slot
+    await updateDoc(doc(db, "bookings", ctx.bookingId), {
+      date: ctx.newDate,
+      dateDisplay: newDateDisplay,
+      slot: ctx.newSlot,
+      doctorDate: newDoctorDate,
+      rescheduledFrom: ctx.originalDate + '@' + ctx.originalSlot,
+      rescheduledAt: serverTimestamp()
+    });
+
+    // 3. Update publicBookings (so lookup-by-token reflects new date/time)
+    try {
+      await updateDoc(doc(db, "publicBookings", ctx.lookupToken), {
+        date: ctx.newDate,
+        dateDisplay: newDateDisplay,
+        slot: ctx.newSlot
+      });
+    } catch (e) { console.warn("publicBookings update:", e); }
+
+    // 4. Free the OLD slot in bookedSlots
+    try {
+      const q = query(collection(db, "bookedSlots"),
+        where("bookingId", "==", ctx.bookingId),
+        where("doctorDate", "==", ctx.doctorName + '_' + ctx.originalDate)
+      );
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        if (d.id === newSlotRef.id) continue; // don't free the new one
+        await updateDoc(doc(db, "bookedSlots", d.id), { status: "cancelled", cancelReason: "rescheduled" });
+      }
+    } catch (e) { console.warn("Old slot free:", e); }
+
+    // Success: show success screen
+    document.getElementById('rsBody').innerHTML = `
+      <div style="text-align:center;padding:30px 20px">
+        <div style="font-size:56px;margin-bottom:14px">✅</div>
+        <div style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy);margin-bottom:8px">Rescheduled!</div>
+        <p style="font-size:14px;color:var(--navy-s);line-height:1.6;margin-bottom:18px">Your appointment with <strong>${escapeHtml(ctx.doctorName)}</strong> has been moved to:</p>
+        <div style="background:var(--teal-l);border-radius:10px;padding:14px 18px;display:inline-block">
+          <div style="font-family:var(--ff-d);font-size:16px;font-weight:700;color:var(--teal-d)">${newDateDisplay} · ${escapeHtml(ctx.newSlot)}</div>
+        </div>
+        <p style="font-size:12px;color:var(--navy-m);line-height:1.5;margin-top:18px">Your token number stays the same. The doctor's clinic will be notified automatically.</p>
+      </div>
+    `;
+    document.getElementById('rsFooter').innerHTML = `
+      <button onclick="closeRescheduleModal();if(typeof loadPatientBookings==='function')loadPatientBookings();" style="width:100%;padding:13px;background:var(--teal);color:white;border:none;border-radius:8px;font-family:var(--ff);font-weight:700;font-size:15px;cursor:pointer">Done</button>
+    `;
+  } catch (e) {
+    console.error('confirmReschedule:', e);
+    _rescheduleError("Could not reschedule: " + (e.message || String(e)) + "\n\nYour original appointment is still confirmed. Try again or contact the clinic.");
+    confirmBtn.disabled = false;
+    confirmBtn.innerHTML = orig;
+  }
+};
+
+function _rescheduleError(msg) {
+  const err = document.getElementById('rsError');
+  if (err) { err.textContent = msg; err.style.display = 'block'; }
+}
+
+function _rescheduleModalHTML() {
+  return `
+<div id="rescheduleModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:9999;align-items:center;justify-content:center;padding:20px;font-family:var(--ff)" onclick="if(event.target===this)closeRescheduleModal()">
+  <div style="background:white;border-radius:var(--r-xl);max-width:520px;width:100%;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.3)" onclick="event.stopPropagation()">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--teal-l);flex-shrink:0">
+      <div style="font-family:var(--ff-d);font-weight:700;color:var(--navy);font-size:18px">🔄 Reschedule Appointment</div>
+      <button onclick="closeRescheduleModal()" style="background:none;border:none;font-size:22px;color:var(--navy-m);cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+    <div id="rsBody" style="padding:20px 22px;overflow-y:auto;flex:1">
+      <div id="rsError" style="display:none;background:#FEE2E2;color:#991B1B;font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:14px;border-left:3px solid #DC2626;white-space:pre-line"></div>
+      <div id="rsCurrentBooking" style="margin-bottom:18px"></div>
+      <div id="rsDatePicker" style="margin-bottom:18px"></div>
+      <div id="rsSlotPicker" style="margin-bottom:8px"></div>
+    </div>
+    <div id="rsFooter" style="padding:14px 22px;border-top:1px solid var(--border);background:var(--bg);flex-shrink:0">
+      <div style="display:flex;gap:10px">
+        <button onclick="closeRescheduleModal()" style="flex:1;padding:12px;background:white;color:var(--navy);border:1.5px solid var(--border-md);border-radius:8px;font-family:var(--ff);font-weight:600;font-size:14px;cursor:pointer">Cancel</button>
+        <button id="rsConfirmBtn" onclick="confirmReschedule()" disabled style="flex:2;padding:12px;background:var(--teal);color:white;border:none;border-radius:8px;font-family:var(--ff);font-weight:700;font-size:14px;cursor:pointer;opacity:0.5">Pick a new slot first</button>
       </div>
     </div>
   </div>
@@ -6801,7 +7197,9 @@ if (document.getElementById("myAppointmentsList")) {
         : isDone
         ? { bg: '#E0E7FF', color: '#3730A3', label: 'COMPLETED', icon: '✓' }
         : { bg: '#D1FAE5', color: '#065F46', label: 'UPCOMING', icon: '📅' };
-      const canModify = isUpcoming && status === "confirmed";
+      const hoursLeft = hoursUntilAppointment(b);
+      const withinCutoff = hoursLeft >= 0 && hoursLeft < HF_MODIFY_CUTOFF_HOURS;
+      const canModify = isUpcoming && status === "confirmed" && !withinCutoff;
       const borderColor = canModify ? 'var(--teal)' : (isCancelled ? '#DC2626' : 'var(--navy-h)');
       const specIcons = { 'Cardiologist': '❤️', 'Dermatologist': '🧴', 'Pediatrician': '👶', 'Orthopedic Surgeon': '🦴', 'Gynecologist': '👩', 'ENT Specialist': '👂', 'Ophthalmologist': '👁️', 'Dentist': '🦷', 'Psychiatrist': '🧠', 'General Physician': '🩺' };
       const specIcon = specIcons[b.specialty] || '👨‍⚕️';
@@ -6843,6 +7241,19 @@ if (document.getElementById("myAppointmentsList")) {
 
   window.cancelMyBooking = async function (lookupToken, bookingId) {
     if (!lookupToken || !bookingId) { alert("Missing booking details."); return; }
+
+    // 4-hour cutoff check — defense in depth (UI already hides the button, but block here too)
+    try {
+      const booking = await loadPublicBooking(lookupToken);
+      if (booking) {
+        const hoursLeft = hoursUntilAppointment(booking);
+        if (hoursLeft >= 0 && hoursLeft < HF_MODIFY_CUTOFF_HOURS) {
+          alert(`⏰ Your appointment is in ${Math.max(0, Math.round(hoursLeft * 10) / 10)} hours — within our ${HF_MODIFY_CUTOFF_HOURS}-hour cutoff.\n\nTo cancel within this window, please call the clinic directly.`);
+          return;
+        }
+      }
+    } catch (e) { /* if check fails, fall through and let user try */ }
+
     if (!confirm("Cancel this appointment?\n\nThis will free up your slot and notify the doctor. This action cannot be undone.")) return;
     const ok = await cancelBookingAsPatient(lookupToken, bookingId);
     if (ok) {
@@ -6854,16 +7265,12 @@ if (document.getElementById("myAppointmentsList")) {
     }
   };
 
-  window.rescheduleBooking = async function (lookupToken, bookingId, doctorId) {
-    if (!confirm("Reschedule this appointment?\n\nWe'll cancel the current slot and take you to the booking page to pick a new time with the same doctor.")) return;
-    if (lookupToken && bookingId) {
-      await cancelBookingAsPatient(lookupToken, bookingId);
-    }
-    // Redirect to book.html with the doctor pre-selected
-    if (doctorId) {
-      window.location.href = `book.html?docId=${doctorId}`;
+  window.rescheduleBooking = function (lookupToken, bookingId, doctorId) {
+    // Delegates to the modal-based reschedule (defined at top-level so other pages can use it too)
+    if (typeof window.openRescheduleModal === 'function') {
+      window.openRescheduleModal(lookupToken, bookingId, doctorId);
     } else {
-      window.location.href = `book.html`;
+      alert("Reschedule isn't ready yet — try refreshing the page.");
     }
   };
 
