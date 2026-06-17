@@ -6703,32 +6703,18 @@ if (document.getElementById("myAppointmentsList")) {
       return fresh ? { ...s, ...fresh } : s;
     }));
 
-    // 5. If patient is signed in, ALSO fetch server-side bookings matching their phone
-    //    AND filter out localStorage bookings that don't match the signed-in patient's phone
-    //    (so they don't see other people's bookings made on the same shared device)
+    // 5. When SIGNED IN: ignore localStorage entirely. Source of truth is Firestore.
+    //    The Firestore query + rules guarantee we only see bookings matching the signed-in phone.
+    //    This prevents seeing stale or shared-device bookings that don't belong to this patient.
     if (window._currentPatient && window._currentPatient.phoneDigits) {
+      bookings = []; // discard localStorage results
       const myPhone = window._currentPatient.phoneDigits;
-
-      // Filter localStorage bookings: only keep those whose phone matches the signed-in patient
-      bookings = bookings.filter(b => {
-        const bPhone = (b.phone || '').replace(/\D/g, '').slice(-10);
-        // If we don't have a phone on the booking (older bookings), keep it (best effort)
-        if (!bPhone) return true;
-        return bPhone === myPhone;
-      });
-
       try {
         const { collection, query, where, getDocs } = window._fs;
         const q = query(collection(db, "bookings"), where("phone", "==", myPhone));
         const snap = await getDocs(q);
-        const serverBookings = [];
-        snap.forEach(d => serverBookings.push({ bookingId: d.id, ...d.data() }));
-
-        // Merge: dedupe by lookupToken or (date+slot+doctor)
-        serverBookings.forEach(sb => {
-          const tokenMatch = bookings.find(b => b.lookupToken && b.lookupToken === sb.lookupToken);
-          const fingerprintMatch = bookings.find(b => b.date === sb.date && b.slot === sb.slot && b.doctor === sb.doctor);
-          if (tokenMatch || fingerprintMatch) return;
+        snap.forEach(d => {
+          const sb = { bookingId: d.id, ...d.data() };
           bookings.push({
             lookupToken: sb.lookupToken || '',
             bookingId: sb.bookingId,
