@@ -6684,22 +6684,31 @@ if (document.getElementById("myAppointmentsList")) {
     }));
 
     // 5. If patient is signed in, ALSO fetch server-side bookings matching their phone
+    //    AND filter out localStorage bookings that don't match the signed-in patient's phone
+    //    (so they don't see other people's bookings made on the same shared device)
     if (window._currentPatient && window._currentPatient.phoneDigits) {
+      const myPhone = window._currentPatient.phoneDigits;
+
+      // Filter localStorage bookings: only keep those whose phone matches the signed-in patient
+      bookings = bookings.filter(b => {
+        const bPhone = (b.phone || '').replace(/\D/g, '').slice(-10);
+        // If we don't have a phone on the booking (older bookings), keep it (best effort)
+        if (!bPhone) return true;
+        return bPhone === myPhone;
+      });
+
       try {
         const { collection, query, where, getDocs } = window._fs;
-        const q = query(
-          collection(db, "bookings"),
-          where("phone", "==", window._currentPatient.phoneDigits)
-        );
+        const q = query(collection(db, "bookings"), where("phone", "==", myPhone));
         const snap = await getDocs(q);
         const serverBookings = [];
         snap.forEach(d => serverBookings.push({ bookingId: d.id, ...d.data() }));
 
-        // Merge: dedupe by lookupToken if matching, otherwise by (date+slot+doctor)
+        // Merge: dedupe by lookupToken or (date+slot+doctor)
         serverBookings.forEach(sb => {
           const tokenMatch = bookings.find(b => b.lookupToken && b.lookupToken === sb.lookupToken);
           const fingerprintMatch = bookings.find(b => b.date === sb.date && b.slot === sb.slot && b.doctor === sb.doctor);
-          if (tokenMatch || fingerprintMatch) return; // already have it
+          if (tokenMatch || fingerprintMatch) return;
           bookings.push({
             lookupToken: sb.lookupToken || '',
             bookingId: sb.bookingId,
@@ -6712,6 +6721,7 @@ if (document.getElementById("myAppointmentsList")) {
             token: sb.token,
             fee: sb.fee,
             status: sb.status,
+            phone: sb.phone,
             _fromServer: true
           });
         });
@@ -6720,10 +6730,24 @@ if (document.getElementById("myAppointmentsList")) {
       }
     }
 
+    // Update the source label
+    const sourceLabel = document.getElementById("bookingsSourceLabel");
+    if (sourceLabel) {
+      if (window._currentPatient) {
+        sourceLabel.textContent = `For ${window._currentPatient.phone} — synced across all your devices`;
+        sourceLabel.style.color = 'var(--teal-d)';
+      } else {
+        sourceLabel.textContent = "From this device only · Sign in to see all bookings";
+        sourceLabel.style.color = 'var(--navy-m)';
+      }
+    }
+
     // 6. Render
     if (bookings.length === 0) {
       if (empty) empty.style.display = "";
       list.style.display = "none";
+      const statsRow = document.getElementById("apptStatsRow");
+      if (statsRow) statsRow.style.display = 'none';
       return;
     }
     if (empty) empty.style.display = "none";
@@ -6740,36 +6764,74 @@ if (document.getElementById("myAppointmentsList")) {
       return aUpcoming ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate);
     });
 
+    // Calculate and show stats summary
+    const statsRow = document.getElementById("apptStatsRow");
+    if (statsRow) {
+      const upcoming = bookings.filter(b => (b.date || '') >= today && b.status !== 'cancelled' && b.status !== 'done').length;
+      const completed = bookings.filter(b => b.status === 'done' || ((b.date || '') < today && b.status === 'confirmed')).length;
+      const cancelled = bookings.filter(b => b.status === 'cancelled').length;
+      document.getElementById("statsUpcoming").textContent = upcoming;
+      document.getElementById("statsCompleted").textContent = completed;
+      document.getElementById("statsCancelled").textContent = cancelled;
+      statsRow.style.display = 'flex';
+    }
+
     list.innerHTML = bookings.map(b => {
       const isUpcoming = (b.date || "") >= today;
       const status = b.status || "confirmed";
-      const statusColor = status === "cancelled" ? "var(--red)" : (status === "done" ? "var(--navy-m)" : "var(--green)");
-      const statusLabel = status === "cancelled" ? "Cancelled" : (status === "done" ? "Completed" : (isUpcoming ? "Upcoming" : "Past"));
+      const isCancelled = status === "cancelled";
+      const isDone = status === "done" || (!isUpcoming && status === "confirmed");
+      const statusConfig = isCancelled
+        ? { bg: '#FEE2E2', color: '#991B1B', label: 'CANCELLED', icon: '✗' }
+        : isDone
+        ? { bg: '#E0E7FF', color: '#3730A3', label: 'COMPLETED', icon: '✓' }
+        : { bg: '#D1FAE5', color: '#065F46', label: 'UPCOMING', icon: '📅' };
       const canModify = isUpcoming && status === "confirmed";
-      const serverBadge = b._fromServer ? '<span style="background:var(--teal-l);color:var(--teal-d);font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;margin-left:6px">☁️ SIGNED-IN</span>' : '';
+      const cardBorder = canModify ? 'border-left:4px solid var(--teal)' : (isCancelled ? 'border-left:4px solid #DC2626' : 'border-left:4px solid var(--navy-h)');
+      // Get specialty icon based on name
+      const specIcons = { 'Cardiologist': '❤️', 'Dermatologist': '🧴', 'Pediatrician': '👶', 'Orthopedic Surgeon': '🦴', 'Gynecologist': '👩', 'ENT Specialist': '👂', 'Ophthalmologist': '👁️', 'Dentist': '🦷', 'Psychiatrist': '🧠', 'General Physician': '🩺' };
+      const specIcon = specIcons[b.specialty] || '👨‍⚕️';
 
       return `
-        <div style="background:white;border-radius:var(--r-xl);padding:24px;border:1px solid var(--border);margin-bottom:16px;${status === "cancelled" ? "opacity:0.7" : ""}">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-            <div>
-              <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${escapeHtml(b.doctor || "—")}${serverBadge}</div>
-              <div style="font-size:14px;color:var(--teal);font-weight:600;margin-top:3px">${escapeHtml(b.specialty || "")}</div>
+        <div style="background:white;border-radius:var(--r-xl);padding:0;border:1px solid var(--border);margin-bottom:16px;${cardBorder};box-shadow:0 2px 8px rgba(0,0,0,0.04);overflow:hidden;${isCancelled ? 'opacity:0.75' : ''};transition:transform 0.15s,box-shadow 0.15s" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,0.08)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)'">
+          <div style="padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;gap:14px;align-items:center;flex:1;min-width:240px">
+              <div style="width:52px;height:52px;background:var(--teal-l);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">${specIcon}</div>
+              <div style="flex:1">
+                <div style="font-family:var(--ff-d);font-size:18px;font-weight:700;color:var(--navy);line-height:1.2;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  ${escapeHtml(b.doctor || "—")}
+                  ${b._fromServer ? '<span style="background:var(--teal-l);color:var(--teal-d);font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;letter-spacing:0.5px">☁ SYNCED</span>' : ''}
+                </div>
+                <div style="font-size:13px;color:var(--teal-d);font-weight:600;margin-top:2px">${escapeHtml(b.specialty || "")}</div>
+              </div>
             </div>
-            <span style="background:${statusColor};color:white;padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap">${statusLabel}</span>
+            <span style="background:${statusConfig.bg};color:${statusConfig.color};padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;letter-spacing:0.5px;white-space:nowrap;display:flex;align-items:center;gap:5px">${statusConfig.icon} ${statusConfig.label}</span>
           </div>
-          <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--navy-s);line-height:1.6;padding-top:14px;border-top:1px solid var(--border)">
-            <div><strong>📅</strong> ${escapeHtml(b.dateDisplay || b.date || "—")}</div>
-            <div><strong>⏰</strong> ${escapeHtml(b.slot || "—")}</div>
-            <div><strong>🆔</strong> Token ${escapeHtml(b.token || "—")}</div>
-            <div><strong>💰</strong> ₹${escapeHtml(b.fee || "—")}</div>
+          <div style="padding:18px 24px;display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:14px;background:var(--bg)">
+            <div>
+              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">📅 Date</div>
+              <div style="font-size:14px;color:var(--navy);font-weight:600">${escapeHtml(b.dateDisplay || b.date || "—")}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">⏰ Time</div>
+              <div style="font-size:14px;color:var(--navy);font-weight:600">${escapeHtml(b.slot || "—")}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">🎫 Token</div>
+              <div style="font-size:14px;color:var(--navy);font-weight:600">#${escapeHtml(b.token || "—")}</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">💰 Fee</div>
+              <div style="font-size:14px;color:var(--navy);font-weight:700">₹${escapeHtml(b.fee || "—")}</div>
+            </div>
           </div>
-          <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <div style="padding:14px 24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             ${canModify ? `
-              <button onclick="rescheduleBooking('${b.lookupToken}','${b.bookingId || ""}','${b.doctorId || ""}')" class="btn-primary" style="font-size:12px;padding:7px 14px">🔄 Reschedule</button>
-              <button onclick="cancelMyBooking('${b.lookupToken}','${b.bookingId || ""}')" style="font-size:12px;padding:7px 14px;background:white;color:var(--red);border:1.5px solid var(--red);border-radius:var(--r);font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
+              <button onclick="rescheduleBooking('${b.lookupToken}','${b.bookingId || ""}','${b.doctorId || ""}')" class="btn-primary" style="font-size:12px;padding:8px 16px">🔄 Reschedule</button>
+              <button onclick="cancelMyBooking('${b.lookupToken}','${b.bookingId || ""}')" style="font-size:12px;padding:8px 16px;background:white;color:var(--red);border:1.5px solid var(--red);border-radius:var(--r);font-weight:600;cursor:pointer;font-family:var(--ff)">✗ Cancel</button>
             ` : ""}
-            ${b.lookupToken ? `<button onclick="copyMyApptLink('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px">🔗 Copy link</button>` : ''}
-            ${!b._fromServer ? `<button onclick="removeMyAppt('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:7px 14px;color:var(--navy-m)">🗑 Remove from device</button>` : ''}
+            ${b.lookupToken ? `<button onclick="copyMyApptLink('${b.lookupToken}')" class="btn-ghost" style="font-size:12px;padding:8px 14px">🔗 Copy link</button>` : ''}
+            ${!b._fromServer && b.lookupToken ? `<button onclick="removeMyAppt('${b.lookupToken}')" style="font-size:12px;padding:8px 14px;background:none;border:none;color:var(--navy-m);cursor:pointer;font-family:var(--ff);margin-left:auto" title="Remove from this device only (does NOT cancel)">🗑 Hide from device</button>` : ''}
           </div>
         </div>`;
     }).join("");
