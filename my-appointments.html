@@ -41,33 +41,64 @@
 </nav>
 
 <!-- PAGE HEADER -->
-<div class="page-header">
+<div class="page-header" style="background:linear-gradient(135deg, var(--teal) 0%, var(--teal-d) 100%);color:white">
   <div class="ph-inner">
-    <a href="index.html" class="ph-back">← Back to home</a>
-    <div class="ph-title">My Appointments</div>
-    <div class="ph-sub">Your saved bookings on this device. Bookmark this page or save your booking links to access them anywhere.</div>
+    <a href="index.html" class="ph-back" style="color:rgba(255,255,255,0.85)">← Back to home</a>
+    <div class="ph-title" style="color:white">My Appointments</div>
+    <div class="ph-sub" style="color:rgba(255,255,255,0.85)">Track your upcoming visits, view past appointments, and reschedule when needed.</div>
   </div>
 </div>
 
-<div class="container" style="padding-top:32px;padding-bottom:80px;max-width:760px">
+<div class="container" style="padding-top:24px;padding-bottom:80px;max-width:840px">
 
   <!-- ── PATIENT SIGN-IN PROMPT (shown when NOT signed in) ── -->
-  <div id="patientSignInPrompt" style="background:linear-gradient(135deg, var(--teal-l) 0%, #FFF7ED 100%);border:1.5px solid var(--teal-ll);border-radius:var(--r-xl);padding:24px;margin-bottom:24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
-    <div style="flex:1;min-width:240px">
-      <div style="font-family:var(--ff-d);font-size:20px;font-weight:700;color:var(--navy);margin-bottom:6px">📱 Sign in to see bookings on any device</div>
-      <div style="font-size:13px;color:var(--navy-s);line-height:1.6">Right now bookings are saved only on this browser. Sign in with your phone number and we'll show all your past + upcoming bookings here, wherever you log in.</div>
+  <div id="patientSignInPrompt" style="background:white;border:2px dashed var(--teal-ll);border-radius:var(--r-xl);padding:28px;margin-bottom:28px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;position:relative;overflow:hidden">
+    <div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;background:var(--teal-l);border-radius:50%;opacity:0.4"></div>
+    <div style="position:absolute;bottom:-40px;left:-20px;width:100px;height:100px;background:#FFF7ED;border-radius:50%;opacity:0.6"></div>
+    <div style="font-size:56px;flex-shrink:0;position:relative;z-index:1">📱</div>
+    <div style="flex:1;min-width:240px;position:relative;z-index:1">
+      <div style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy);margin-bottom:8px;line-height:1.2">Sign in to see bookings everywhere</div>
+      <div style="font-size:14px;color:var(--navy-s);line-height:1.65">Bookings made on this browser appear below. Sign in with your phone to also see bookings from other devices — and never lose track of an appointment again.</div>
     </div>
-    <button onclick="openPatientSignIn()" class="btn-primary" style="font-size:14px;padding:12px 22px;white-space:nowrap">🔐 Sign In</button>
+    <button onclick="openPatientSignIn()" class="btn-primary" style="font-size:15px;padding:14px 28px;white-space:nowrap;position:relative;z-index:1">🔐 Sign In</button>
   </div>
 
   <!-- ── PATIENT PROFILE CARD (shown when signed in) ── -->
-  <div id="patientProfileCard" style="display:none;background:linear-gradient(135deg, var(--teal) 0%, var(--teal-d) 100%);color:white;border-radius:var(--r-xl);padding:22px 26px;margin-bottom:24px;display:none;align-items:center;gap:20px;flex-wrap:wrap;box-shadow:0 6px 20px rgba(61,90,76,0.25)">
-    <div style="flex:1;min-width:200px">
-      <div style="font-size:12px;opacity:0.85;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px">Signed In As</div>
-      <div style="font-family:var(--ff-d);font-size:22px;font-weight:700;line-height:1.2" id="patientProfileName">Welcome</div>
-      <div style="font-size:13px;opacity:0.9;margin-top:4px" id="patientProfilePhone">—</div>
+  <div id="patientProfileCard" style="display:none;background:linear-gradient(135deg, var(--teal) 0%, var(--teal-d) 100%);color:white;border-radius:var(--r-xl);padding:24px 28px;margin-bottom:28px;align-items:center;gap:20px;flex-wrap:wrap;box-shadow:0 8px 24px rgba(61,90,76,0.25);position:relative;overflow:hidden">
+    <div style="position:absolute;top:-50px;right:-50px;width:180px;height:180px;background:rgba(255,255,255,0.06);border-radius:50%"></div>
+    <div style="position:absolute;bottom:-30px;right:80px;width:100px;height:100px;background:rgba(255,255,255,0.04);border-radius:50%"></div>
+    <div style="width:56px;height:56px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;position:relative;z-index:1">👤</div>
+    <div style="flex:1;min-width:200px;position:relative;z-index:1">
+      <div style="font-size:11px;opacity:0.85;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:4px">Welcome back</div>
+      <div style="font-family:var(--ff-d);font-size:24px;font-weight:700;line-height:1.2" id="patientProfileName">—</div>
+      <div style="font-size:13px;opacity:0.85;margin-top:4px;display:flex;align-items:center;gap:6px">📞 <span id="patientProfilePhone">—</span></div>
     </div>
-    <button onclick="signOutPatient()" style="background:rgba(255,255,255,0.2);border:1.5px solid rgba(255,255,255,0.3);color:white;font-family:var(--ff);font-weight:600;font-size:13px;padding:9px 18px;border-radius:24px;cursor:pointer;white-space:nowrap">🚪 Sign Out</button>
+    <button onclick="signOutPatient()" style="background:rgba(255,255,255,0.18);border:1.5px solid rgba(255,255,255,0.3);color:white;font-family:var(--ff);font-weight:600;font-size:13px;padding:10px 20px;border-radius:24px;cursor:pointer;white-space:nowrap;position:relative;z-index:1;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">🚪 Sign Out</button>
+  </div>
+
+  <!-- ── STATS SUMMARY (shown when there are bookings) ── -->
+  <div id="apptStatsRow" style="display:none;gap:14px;margin-bottom:24px">
+    <div style="flex:1;background:white;border-radius:var(--r-lg);padding:18px 20px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+      <div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:1px;margin-bottom:6px">📅 Upcoming</div>
+      <div style="font-family:var(--ff-d);font-size:32px;font-weight:700;color:var(--teal-d);line-height:1" id="statsUpcoming">0</div>
+    </div>
+    <div style="flex:1;background:white;border-radius:var(--r-lg);padding:18px 20px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+      <div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:1px;margin-bottom:6px">✅ Completed</div>
+      <div style="font-family:var(--ff-d);font-size:32px;font-weight:700;color:var(--navy);line-height:1" id="statsCompleted">0</div>
+    </div>
+    <div style="flex:1;background:white;border-radius:var(--r-lg);padding:18px 20px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+      <div style="font-size:11px;color:var(--navy-m);text-transform:uppercase;font-weight:700;letter-spacing:1px;margin-bottom:6px">✗ Cancelled</div>
+      <div style="font-family:var(--ff-d);font-size:32px;font-weight:700;color:var(--red);line-height:1" id="statsCancelled">0</div>
+    </div>
+  </div>
+
+  <!-- ── BOOK NEW BUTTON ── -->
+  <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+    <div>
+      <div style="font-family:var(--ff-d);font-size:22px;font-weight:700;color:var(--navy)">Your Bookings</div>
+      <div style="font-size:13px;color:var(--navy-m);margin-top:2px" id="bookingsSourceLabel">From this device</div>
+    </div>
+    <a href="book.html" class="btn-primary" style="font-size:14px;padding:11px 22px">+ Book New Appointment</a>
   </div>
 
   <!-- Bookings list -->
@@ -77,32 +108,33 @@
 
   <!-- Empty state (shown if no saved bookings) -->
   <div id="myAppointmentsEmpty" style="display:none">
-    <div style="background:white;border-radius:var(--r-xl);padding:48px 32px;text-align:center;border:1px solid var(--border)">
-      <div style="font-size:56px;margin-bottom:16px">📋</div>
-      <h2 style="font-family:var(--ff-d);font-size:26px;color:var(--navy);margin-bottom:10px">No saved appointments</h2>
-      <p style="color:var(--navy-m);font-size:15px;line-height:1.6;max-width:480px;margin:0 auto 24px">
-        Bookings you make from this browser will appear here automatically. If you booked from a different device, sign in or paste your booking link below.
+    <div style="background:white;border-radius:var(--r-xl);padding:60px 32px;text-align:center;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+      <div style="font-size:72px;margin-bottom:18px">🗓️</div>
+      <h2 style="font-family:var(--ff-d);font-size:26px;color:var(--navy);margin-bottom:10px">No appointments yet</h2>
+      <p style="color:var(--navy-m);font-size:15px;line-height:1.65;max-width:480px;margin:0 auto 28px">
+        Once you book, your appointments will appear here. Browse our verified doctors and pick a time that suits you.
       </p>
-      <a href="book.html" class="btn-primary btn-lg">Book an Appointment →</a>
+      <a href="book.html" class="btn-primary btn-lg">Find a Doctor →</a>
     </div>
   </div>
 
   <!-- Lookup by link -->
-  <div style="background:var(--teal-l);border-radius:var(--r-xl);padding:24px;margin-top:32px;border:1px solid var(--teal-ll)">
-    <div style="font-family:var(--ff-d);font-size:18px;font-weight:700;color:var(--navy);margin-bottom:6px">🔍 Have a booking link?</div>
-    <div style="font-size:13px;color:var(--navy-m);margin-bottom:14px">Paste the link or token from your confirmation message to view that booking:</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <input type="text" id="lookupCode" placeholder="https://...?t=tk_xyz... or just tk_xyz..." style="flex:1;min-width:240px;padding:10px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:white;outline:none" onkeypress="if(event.key==='Enter')checkLookupCode()">
-      <button onclick="checkLookupCode()" class="btn-primary" style="font-size:14px;padding:10px 20px">View Booking</button>
+  <div style="background:white;border-radius:var(--r-xl);padding:24px;margin-top:32px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div style="width:36px;height:36px;background:var(--teal-l);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px">🔍</div>
+      <div style="font-family:var(--ff-d);font-size:18px;font-weight:700;color:var(--navy)">Have a booking link?</div>
+    </div>
+    <div style="font-size:13px;color:var(--navy-m);margin-bottom:14px;margin-left:46px">Paste the link or token from your confirmation message to view that booking:</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:46px">
+      <input type="text" id="lookupCode" placeholder="https://...?t=tk_xyz... or just tk_xyz..." style="flex:1;min-width:240px;padding:11px 14px;border:1.5px solid var(--border-md);border-radius:var(--r);font-family:var(--ff);font-size:14px;background:var(--bg);outline:none" onkeypress="if(event.key==='Enter')checkLookupCode()">
+      <button onclick="checkLookupCode()" class="btn-primary" style="font-size:14px;padding:11px 22px">View Booking</button>
     </div>
   </div>
 
-  <!-- Privacy note -->
-  <div style="margin-top:32px;padding:16px 20px;background:white;border-radius:var(--r-lg);border:1px solid var(--border);font-size:13px;color:var(--navy-m);line-height:1.6">
-    <strong style="color:var(--navy)">🔒 About this page</strong><br>
-    When you're <strong>signed in</strong>, all your past and upcoming bookings appear here on any device. When not signed in, only bookings made from this browser are shown.
-    <br><br>
-    Need to <strong>cancel</strong> a booking? Open it and use the Cancel button. Need help? Email <a href="mailto:hello@healthfirst.in" style="color:var(--teal);font-weight:600">hello@healthfirst.in</a>.
+  <!-- Info note -->
+  <div style="margin-top:20px;padding:16px 20px;background:#F5F1EA;border-radius:var(--r-lg);border:1px solid var(--border);font-size:13px;color:var(--navy-m);line-height:1.65">
+    <strong style="color:var(--navy)">💡 Tip:</strong> When you're <strong style="color:var(--navy)">signed in</strong>, all your past and upcoming bookings appear here on any device. Otherwise, only bookings made from this browser are shown.
+    Need help? Email <a href="mailto:hello@healthfirst.in" style="color:var(--teal);font-weight:600">hello@healthfirst.in</a>.
   </div>
 </div>
 
@@ -143,6 +175,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=61"></script>
+<script src="app.js?v=62"></script>
 </body>
 </html>
